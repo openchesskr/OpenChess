@@ -90,3 +90,16 @@ export function normalizeSaved(list) {
 export const LEGACY_LINK_RE = /^\/legacy\/([A-Za-z]{5}[0-9]{4})-([a-z][a-z0-9]{0,23})$/;
 export const legacyPath = (mid, id) => "/legacy/" + String(mid).toUpperCase() + "-" + id;
 export function parseLegacyPath(path) { const m = LEGACY_LINK_RE.exec(path || ""); return m ? { mid: m[1].toUpperCase(), id: m[2] } : null; }
+// (v0.7.9, 사용자 요청 "날짜 정보가 없는 게시물의 날짜는 오늘 날짜로 입력") 저장 시각(savedAt)이 없는 옛 유산에 지금 시각을 한 번 찍는다.
+// App이 불러올 때 한 번 부르고 그 결과를 저장·공개하므로 날짜가 이후로 고정된다(화면에서만 "오늘"로 보이면 매일 바뀐다). 바뀐 게 없으면 같은 객체를 돌려준다.
+// 서버의 이미 공개된 유산은 supabase-setup.sql의 같은 규칙(백필)이 채운다.
+export function stampMissingSavedAt(map, now = Date.now()) {
+  if (!map || typeof map !== "object" || Array.isArray(map)) return map;
+  let changed = false;
+  const out = {};
+  for (const [k, v] of Object.entries(map)) {
+    if (v && typeof v === "object" && !Array.isArray(v) && !(Number.isFinite(v.savedAt) && v.savedAt > 0)) { out[k] = { ...v, savedAt: now }; changed = true; }
+    else out[k] = v;
+  }
+  return changed ? out : map;
+}

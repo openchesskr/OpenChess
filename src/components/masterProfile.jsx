@@ -13,9 +13,10 @@ import { enName } from "../data/playerNames.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
 import { MasterNameLink } from "./masterLink.jsx";
 import { masterDisplayName } from "../lib/masterPages.js";
+import { Section, StatGrid, TimeRow, ChipList } from "./dexCardKit.jsx";
 
 const TOUR_BY_ID = new Map(TOURNAMENTS.map((x) => [x.id, x]));
-const head = (txt) => <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, margin: "12px 0 3px" }}>{txt}</div>;
+const SubHead = ({ txt }) => <div style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, margin: "6px 0 4px", fontFamily: "inherit" }}>{txt}</div>;
 const row = { fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT };
 const small = { fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT };
 const pct = (a, n) => (n ? Math.round((a / n) * 100) : 0);
@@ -45,8 +46,6 @@ function Spark({ pts }) {
     </div>
   );
 }
-// (v0.7.6) 항목 사이에 줄바꿈할 자리가 없어 좁은 화면(마스터 페이지 모바일)에서 오른쪽으로 넘쳤다 — 줄바꿈되는 flex로
-const MoveList = ({ list, prefix }) => <div style={{ ...row, display: "flex", flexWrap: "wrap", columnGap: 10 }}>{list.map(([san, n, p]) => <span key={san} style={{ whiteSpace: "nowrap" }}>{prefix}{san} <span style={{ color: T.inkSoft }}>{t("{0}판", n)}, {p}%</span></span>)}</div>;
 const EcoList = ({ list }) => <div>{list.map(([eco, name, n, p]) => <div key={eco} style={row}><b>{eco}</b> {name} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", n)}, {p}%</span></div>)}</div>;
 
 export default function MasterProfile({ name, profileKey, onOpenGame, onOpenGameAnalyze, onOpenTour, hideHead }) {
@@ -57,50 +56,86 @@ export default function MasterProfile({ name, profileKey, onOpenGame, onOpenGame
   if (prof === undefined) return <div style={{ ...small, marginTop: 10 }}>{t("불러오는 중…")}</div>;
   if (!p && !played.length) return null;
   const myName = enName(String(p ? p.name : name).split(":")[0]);   // (v0.7.6 BUG-167) 이름 칸에 다른 사람이 붙은 옛 데이터는 앞사람만
+  const ws = p ? pct(p.w[0] + p.w[1] / 2, p.w[0] + p.w[1] + p.w[2]) : 0, bs = p ? pct(p.b[0] + p.b[1] / 2, p.b[0] + p.b[1] + p.b[2]) : 0;
+  // (v0.7.9, 사용자 요청) 섹션·타일 체계(components/dexCardKit.jsx)로 다시 짰다 — 전적 → 수치 타일 → 레이팅 추이 → 첫 수·오프닝 → 상대·대회 → 대표 대국.
   return (
     <div>
       {p && <>
-        {!hideHead && head(t("전적, {0}판, {1}–{2}", p.n, p.y0, p.y1))}
-        {/* (v0.7.5) 저장소의 마스터 대국 DB·대회 데이터로 보충한 프로필(build-master-profiles-db) — 선수의 전체 경력이 아니라 수록된 대국만 센 통계임을 밝힌다 */}
-        {p.src === "db" && <div style={{ ...small, marginBottom: 4 }}>{t("OpenChess 마스터 대국 DB 수록 대국 기준 통계")}</div>}
-        <WdlBar w={p.wdl[0]} d={p.wdl[1]} l={p.wdl[2]} />
-        <div style={{ ...row, marginTop: 4 }}>{t("백")} {pct(p.w[0] + p.w[1] / 2, p.w[0] + p.w[1] + p.w[2])}%, {t("흑")} {pct(p.b[0] + p.b[1] / 2, p.b[0] + p.b[1] + p.b[2])}% <span style={{ color: T.inkSoft, fontSize: 11 }}>({t("점수율")})</span></div>
-        <div style={row}>{t("평균 {0}수, 무승부 {1}%", p.len, p.draw)}</div>
-        {p.peak[0] > 0 && <>
-          {head(t("최고 레이팅"))}
-          <div style={row}>{p.peak[0]}{p.peak[1] ? " (" + p.peak[1] + ")" : ""}</div>
-          <Spark pts={p.elo} />
-        </>}
-        {p.fm.length > 0 && <>{head(t("백 첫 수"))}<MoveList list={p.fm} prefix="1." /></>}
-        {p.e4.length > 0 && <>{head(t("흑, 1.e4에 대한 응수"))}<MoveList list={p.e4} prefix="1.e4 " /></>}
-        {p.d4.length > 0 && <>{head(t("흑, 1.d4에 대한 응수"))}<MoveList list={p.d4} prefix="1.d4 " /></>}
-        {p.ecoW.length > 0 && <>{head(t("자주 둔 오프닝, 백"))}<EcoList list={p.ecoW} /></>}
-        {p.ecoB.length > 0 && <>{head(t("자주 둔 오프닝, 흑"))}<EcoList list={p.ecoB} /></>}
-        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}><MasterNameLink name={n}>{masterDisplayName(n) || enName(n.split(":")[0])}</MasterNameLink> <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}, {w}-{d}-{l}</span></div>)}</>}
-        {p.ev.length > 0 && <>{head(t("자주 나온 대회"))}{p.ev.map(([n, c, y0, y1]) => <div key={n} style={row}>{n} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}{y0 ? ", " + y0 + (y1 !== y0 ? "–" + y1 : "") : ""}</span></div>)}</>}
+        <Section title={hideHead ? t("전적") : t("전적, {0}판, {1}–{2}", p.n, p.y0, p.y1)}>
+          {/* (v0.7.5) 저장소의 마스터 대국 DB·대회 데이터로 보충한 프로필(build-master-profiles-db) — 선수의 전체 경력이 아니라 수록된 대국만 센 통계임을 밝힌다 */}
+          {p.src === "db" && <div style={{ ...small, marginBottom: 4 }}>{t("OpenChess 마스터 대국 DB 수록 대국 기준 통계")}</div>}
+          <WdlBar w={p.wdl[0]} d={p.wdl[1]} l={p.wdl[2]} />
+          <div style={{ marginTop: 8 }}>
+            <StatGrid items={[
+              { label: t("백") + " (" + t("점수율") + ")", value: ws + "%" },
+              { label: t("흑") + " (" + t("점수율") + ")", value: bs + "%" },
+              { label: t("평균 수"), value: String(p.len) },
+              { label: t("무승부"), value: p.draw + "%" },
+            ]} />
+          </div>
+        </Section>
+        {p.peak[0] > 0 && (
+          <Section title={t("최고 레이팅")} aside={p.peak[0] + (p.peak[1] ? " (" + p.peak[1] + ")" : "")}>
+            <div style={{ background: "#FFFBF2", border: "1px solid #E4D5B6", borderRadius: 10, padding: "8px 9px 6px" }}><Spark pts={p.elo} /></div>
+          </Section>
+        )}
+        {(p.fm.length > 0 || p.e4.length > 0 || p.d4.length > 0) && (
+          <Section title={t("즐겨 두는 수")}>
+            {p.fm.length > 0 && <SubHead txt={t("백 첫 수")} />}{p.fm.length > 0 && <ChipList items={p.fm.map(([san, n, q]) => ({ main: "1." + san, sub: t("{0}판", n) + ", " + q + "%" }))} />}
+            {p.e4.length > 0 && <SubHead txt={t("흑, 1.e4에 대한 응수")} />}{p.e4.length > 0 && <ChipList items={p.e4.map(([san, n, q]) => ({ main: "1.e4 " + san, sub: t("{0}판", n) + ", " + q + "%" }))} />}
+            {p.d4.length > 0 && <SubHead txt={t("흑, 1.d4에 대한 응수")} />}{p.d4.length > 0 && <ChipList items={p.d4.map(([san, n, q]) => ({ main: "1.d4 " + san, sub: t("{0}판", n) + ", " + q + "%" }))} />}
+          </Section>
+        )}
+        {(p.ecoW.length > 0 || p.ecoB.length > 0) && (
+          <Section title={t("자주 둔 오프닝")}>
+            {p.ecoW.length > 0 && <><SubHead txt={t("자주 둔 오프닝, 백")} /><EcoList list={p.ecoW} /></>}
+            {p.ecoB.length > 0 && <><SubHead txt={t("자주 둔 오프닝, 흑")} /><EcoList list={p.ecoB} /></>}
+          </Section>
+        )}
+        {p.opp.length > 0 && (
+          <Section title={t("자주 만난 상대")} aside={p.opp.length}>
+            {p.opp.map(([n, c, w, d, l]) => (
+              <div key={n} className="flex items-center gap-2" style={{ padding: "4px 0", borderBottom: "1px dashed #E6D8BC" }}>
+                <span style={{ ...row, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><MasterNameLink name={n}>{masterDisplayName(n) || enName(n.split(":")[0])}</MasterNameLink></span>
+                <span style={{ ...small, whiteSpace: "nowrap" }}>{t("{0}판", c)}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}><span style={{ color: T.best }}>{w}</span>-<span style={{ color: T.inkSoft }}>{d}</span>-<span style={{ color: "#B5483E" }}>{l}</span></span>
+              </div>
+            ))}
+          </Section>
+        )}
+        {p.ev.length > 0 && (
+          <Section title={t("자주 나온 대회")} aside={p.ev.length}>
+            {p.ev.map(([n, c, y0, y1]) => <TimeRow key={n} when={y0 ? y0 + (y1 !== y0 ? "–" + String(y1).slice(-2) : "") : "—"}>{n} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}</span></TimeRow>)}
+          </Section>
+        )}
       </>}
-      {played.length > 0 && <>
-        {head(t("대회 출전 기록"))}
-        {played.map((x) => { const tr = TOUR_BY_ID.get(x.id); if (!tr) return null; return (
-          <div key={x.id} style={row}>
-            <button onClick={() => onOpenTour && onOpenTour(x.id)} className="press" style={{ border: "none", background: "none", padding: 0, cursor: onOpenTour ? "pointer" : "default", color: T.ink, textDecoration: onOpenTour ? "underline" : "none", fontWeight: 700, fontSize: 12, fontFamily: SITE_FONT, textAlign: "left" }}>{tr.name}</button>
-            <span style={{ color: T.inkSoft, fontSize: 11 }}> {t("{0}회", x.n)}, {x.y0}{x.y1 !== x.y0 ? "–" + x.y1 : ""}</span>
-          </div>); })}
-      </>}
-      {p && p.best.length > 0 && <>
-        {head(t("강한 상대를 이긴 대표 대국"))}
-        {p.best.map(([y, ev, opp, oe, color, code], i) => {
-          const oppName = masterDisplayName(opp) || enName(String(opp).split(":")[0]);
-          const sans = () => decodeMoves(code), w = color === "w" ? myName : oppName, b = color === "w" ? oppName : myName;
-          return (
-            <div key={i} className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""}, vs {enName(opp)} ({oe}), {color === "w" ? t("백") : t("흑")}, {ev}</div>
-              <GameViewButton onClick={() => onOpenGame && onOpenGame(sans())} />
-              <BestMoveJumpButton onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: w, rating: color === "w" ? null : oe }, black: { username: b, rating: color === "w" ? oe : null } })} />
-            </div>
-          );
-        })}
-      </>}
+      {played.length > 0 && (
+        <Section title={t("대회 출전 기록")} aside={played.length}>
+          {played.map((x) => { const tr = TOUR_BY_ID.get(x.id); if (!tr) return null; return (
+            <TimeRow key={x.id} when={x.y0 + (x.y1 !== x.y0 ? "–" + String(x.y1).slice(-2) : "")}>
+              <button onClick={() => onOpenTour && onOpenTour(x.id)} className="press" style={{ border: "none", background: "none", padding: 0, cursor: onOpenTour ? "pointer" : "default", color: T.ink, textDecoration: onOpenTour ? "underline" : "none", fontWeight: 700, fontSize: 12, fontFamily: SITE_FONT, textAlign: "left" }}>{tr.name}</button>
+              <span style={{ color: T.inkSoft, fontSize: 11 }}> {t("{0}회", x.n)}</span>
+            </TimeRow>); })}
+        </Section>
+      )}
+      {p && p.best.length > 0 && (
+        <Section title={t("강한 상대를 이긴 대표 대국")} aside={p.best.length}>
+          {p.best.map(([y, ev, opp, oe, color, code], i) => {
+            const oppName = masterDisplayName(opp) || enName(String(opp).split(":")[0]);
+            const sans = () => decodeMoves(code), w = color === "w" ? myName : oppName, b = color === "w" ? oppName : myName;
+            return (
+              <div key={i} className="flex items-center gap-1" style={{ marginBottom: 4 }}>
+                <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "5px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, lineHeight: 1.35 }}>
+                  <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>vs {enName(opp)} ({oe}), {color === "w" ? t("백") : t("흑")}</div>
+                  <div style={{ fontSize: 10, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""}{y ? ", " : ""}{ev}</div>
+                </div>
+                <GameViewButton onClick={() => onOpenGame && onOpenGame(sans())} />
+                <BestMoveJumpButton onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: w, rating: color === "w" ? null : oe }, black: { username: b, rating: color === "w" ? oe : null } })} />
+              </div>
+            );
+          })}
+        </Section>
+      )}
       {p && <div style={{ ...small, marginTop: 10 }}>{t("래피드·블리츠·온라인 대국이 섞여 있음.")}</div>}
     </div>
   );

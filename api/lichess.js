@@ -5,7 +5,7 @@
 //  · IP당 분당 90회로 제한한다(DB 카운터 — 인스턴스가 여럿이어도 함께 센다). 엣지 캐시에 맞은 응답은 이 함수를 거치지 않아 세지 않는다.
 //  · 퍼즐 가져오기(?puzzle=, 공격 모드 개발자 도구)는 개발자/공동개발자 로그인이 필요하다.
 import { clientIp, supabaseEnv, rateLimited, authUser, isEditor } from "./_lib/server.js";
-import { explorerGamesHandler } from "./_lib/explorerGames.js";
+import { explorerGamesHandler, explorerPgnHandler } from "./_lib/explorerGames.js";
 import { themePuzzlesHandler } from "./_lib/themePuzzles.js";
 
 const EXPLORER_PARAMS = new Set(["fen", "play", "variant", "speeds", "ratings", "since", "until", "moves", "topGames", "recentGames", "history"]);
@@ -13,6 +13,8 @@ const EXPLORER_PARAMS = new Set(["fen", "play", "variant", "speeds", "ratings", 
 export default async function handler(req, res) {
   // (v0.7.8 BUG-178) 집중 분석 "전체 통계" — 함수 개수 제한 때문에 이 함수 안의 경로로 둔다(자체 수순 검증·호출 한도는 처리기 안에서)
   if ((req.query || {}).games === "1") return explorerGamesHandler(req, res);
+  // (v0.7.9, 사용자 요청) 전체 통계 대국의 기보(PGN) — 쌓인 대국만, 검증 후 저장(api/_lib/explorerGames.js explorerPgnHandler)
+  if ((req.query || {}).gpgn === "1") return explorerPgnHandler(req, res);
   // (v0.7.8, 사용자 요청) 학습 탭 "추가 학습"의 레슨 테마 퍼즐 — Lichess 테마 퍼즐을 받아 쌓는다(api/_lib/themePuzzles.js)
   if ((req.query || {}).puzzles === "1") return themePuzzlesHandler(req, res);
   const { master, pgn, ...params } = req.query || {};

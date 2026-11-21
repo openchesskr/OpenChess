@@ -1,7 +1,8 @@
 // (v0.7.4, 사용자 요청) 성장 분석의 데이터 원천 — 내가 직접 리뷰하지 않아도, 가장 최근 대국 5판을 컴퓨터가 백그라운드에서 자동으로 리뷰해 분석한다(항상 최신).
 // 순수 함수라 scripts/check-growth.mjs가 시험한다. 실제 분석은 app/autoReview.js(엔진·캐시)가 한다.
 export const GROWTH_RECENT_GAMES = 5;     // 분석에 쓰는 최근 대국 수(이만큼 있어야 시작)
-export const MIN_GAME_PLIES = 8;          // 이보다 짧은 대국(중단·기권)은 분석에서 뺀다
+export const MIN_GAME_PLIES = 8;
+export const RECENT_PERF_MIN_GAMES = 3;   // 퍼포먼스 레이팅: 이보다 적게 합쳐진 값은 보여주지 않는다, 한두 판은 오차가 너무 크다(v0.7.9, recentPerformance.js에서 옮김 — 화면이 계산 모듈 없이 안내 문구를 쓰도록)          // 이보다 짧은 대국(중단·기권)은 분석에서 뺀다
 
 /* sources: [{ game, owner }] — game은 chess.com 형태의 대국 객체(moves: SAN 배열, color, result, endTime, white/black{username}, id, opening, timeClass, rating, rules),
    owner는 그 대국에서의 내 아이디(chess.com 아이디 또는 OpenChess 아이디). 반환: 리뷰 화면에 바로 넘길 수 있는 대국 객체(sans 포함) 최근순 최대 n개.

@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 'settings' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { parseFenFull, startBoard, plyIsWhite, sanSrc, applySan } from "../lib/chessRules.js";
+import { useOAuthProviders } from "../lib/authProviders.js";
 import { SB_ON, sbSelect, sbRpc, sbInsert, sbUpsert, SB_TOKEN, SB_URL, sbHeaders } from "../lib/supabaseClient.js";
 import { isNativeApp, oauthRedirectUrl, openMailto, startOAuthNavigation } from "../lib/nativeApp.js";
 import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
@@ -1149,6 +1150,7 @@ const ACCOUNT_CENTER_PROVIDERS = [
 ];
 export function AccountCenterModal({ onClose, myUid, username, chesscomUsername, onLogoutClick, onAccountDeleted }) {
   const [identities, setIdentities] = useState(null); // null=불러오는 중
+  const oauthShown = useOAuthProviders();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1235,7 +1237,7 @@ export function AccountCenterModal({ onClose, myUid, username, chesscomUsername,
                 <span style={{ fontSize: 11, fontWeight: 700, color: T.best }}>{t("연결됨")}</span>
               </div>
             )}
-            {ACCOUNT_CENTER_PROVIDERS.map((p) => {
+            {ACCOUNT_CENTER_PROVIDERS.filter((p) => oauthShown.includes(p.key) || identities.some((i) => i.provider === p.key)).map((p) => {   // (v0.7.9, BUG-193) 켜진 수단 + 이미 연결된 수단만
               const idn = identities.find((i) => i.provider === p.key);
               return (
                 <div key={p.key} style={{ ...row, borderBottom: "1px solid rgba(0,0,0,.08)" }}>

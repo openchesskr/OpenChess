@@ -51,3 +51,14 @@ ok(legacyPath("abcde1234", "p1abc") === "/legacy/ABCDE1234-p1abc", "링크 경�
   for (const bad of ["/legacy/", "/legacy/ABCDE1234", "/legacy/ABCD1234-p1", "/legacy/ABCDE1234-P1", "/legacy/ABCDE1234-p1/x", "/user/ABCDE1234-p1"]) ok(parseLegacyPath(bad) === null, "잘못된 링크는 거절: " + bad); }
 if (fails.length) { console.error("✗ legacy-posts check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ legacy-posts check: 게시물 추가·중복·상한(200)·옛 슬롯 호환·저장함 통과");
+// (v0.7.9, 사용자 요청) 날짜 정보가 없는 유산에 지금 시각을 한 번 찍는다 — 이미 있는 날짜는 그대로, 바뀐 게 없으면 같은 객체
+{ const { stampMissingSavedAt } = await import("../src/lib/legacyPosts.js");
+  const now = 1795200000000;
+  const m = { best: { sans: ["e4"], moveIndex: 0 }, p1: { sans: ["d4"], moveIndex: 0, savedAt: 1700000000000 }, p2: { sans: ["c4"], moveIndex: 0, savedAt: 0 } };
+  const r = stampMissingSavedAt(m, now);
+  const bad = [];
+  if (r.best.savedAt !== now || r.p2.savedAt !== now || r.p1.savedAt !== 1700000000000) bad.push("날짜 없는 유산만 지금 시각으로 채워야 함");
+  if (stampMissingSavedAt(r, now + 5) !== r) bad.push("이미 다 채워졌으면 같은 객체를 돌려줘야 함(불필요한 저장·공개 반복 방지)");
+  if (stampMissingSavedAt(null) !== null) bad.push("빈 값은 그대로");
+  if (bad.length) { console.error("✗ legacy-posts savedAt 검사 실패:\n  " + bad.join("\n  ")); process.exit(1); }
+  console.log("✓ legacy-posts savedAt: 날짜 없는 유산만 한 번 채움"); }

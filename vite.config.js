@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { i18nSplitPlugin } from "./scripts/lib/i18nSplit.mjs";
 const jsxShim = (f) => fileURLToPath(new URL("./src/lib/jsx/" + f + ".js", import.meta.url));
 // 단일 스레드 Stockfish는 COOP/COEP가 필요 없지만, 멀티스레드 빌드(SharedArrayBuffer)를 쓰려면
 // 교차 출처 격리가 되어야 한다 — 배포지(vercel.json)와 동일한 헤더를 로컬 개발 서버에도 달아 둔다.
@@ -14,7 +15,8 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = {
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
   // (v0.6.2) 언어별 글자 크기 보정 — JSX 런타임을 src/lib/jsx/로 바꿔 한국어 외 언어에서 inline fontSize를 일괄로 줄인다(src/lib/langScale.js).
-  plugins: [react({ jsxImportSource: "oc-jsx" })],
+  // (v0.7.9 성능) 번역 파일을 첫 화면용·나머지로 나눈다(scripts/lib/i18nSplit.mjs, src/lib/i18n.js loadCatalog).
+  plugins: [react({ jsxImportSource: "oc-jsx" }), i18nSplitPlugin(fileURLToPath(new URL(".", import.meta.url)))],
   resolve: { alias: [{ find: /^oc-jsx\/jsx-runtime$/, replacement: jsxShim("jsx-runtime") }, { find: /^oc-jsx\/jsx-dev-runtime$/, replacement: jsxShim("jsx-dev-runtime") }] },
   // 개발 서버의 의존성 사전 번들이 JSX 런타임(→ i18n.js의 최상위 await)까지 따라가므로 빌드 target(es2022)과 맞춘다.
   optimizeDeps: { exclude: ["oc-jsx"], esbuildOptions: { target: "es2022" } },
@@ -28,6 +30,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // (v0.7.9 성능) 오프닝 이론 트리 스냅샷(약 650KB)은 앱 코드와 다른 파일로 — 배포마다 바뀌는 index 파일과 달리 거의 안 바뀌어 브라우저 캐시에 남는다.
+          if (/[\\/]src[\\/]data[\\/]snapTree\.js$/.test(id)) return "data-snap";
           if (!id.includes("node_modules")) return undefined;
           if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor-react";
           if (id.includes("node_modules/framer-motion") || id.includes("node_modules/motion-")) return "vendor-motion";

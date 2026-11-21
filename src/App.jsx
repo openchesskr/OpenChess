@@ -1,7 +1,6 @@
 import { setMasterNav } from "./lib/masterNav.js";
 import { normalizeReviewGame } from "./lib/reviewGame.js";
 import { AnalysisWithGrowth } from "./app/growthHome.jsx";
-import { MasterPage } from "./app/masterPage.jsx";
 import { parseMasterPath, masterPath, setMasterPageHandler } from "./lib/masterPages.js";
 import { setTitleNav } from "./lib/titleNav.js";
 import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
@@ -24,25 +23,20 @@ import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, 
 import { rememberTabPlace, tabLastPath, tabLastScroll } from "./lib/tabMemory.js";
 import { initialTabForPath, lastTabStored, rememberLastTab, isPendingDeepLink, ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto, economyGet, economyLineSolved, economyClaimQuest, economyClaimChapter, economyClaimPlayQuest, playQuestStatus, economyClaimNotification, economyGacha, economyDevSet, economyDevBonus } from "./app/shell.jsx";
 import { APP_VERSION } from "./app/changelog.js";
-import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
-import { ChatsModal, ChatWindow, FriendsModal, UserProfilePage, UserSearchModal } from "./app/social.jsx";
-import { ProfileEditSheet } from "./app/profileEdit.jsx";   // (v0.7.5) 새 프로필 편집(BUG-156)
+import { PLAY_SPECIAL_GAMES } from "./app/playSpecialGames.jsx";
 import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { BlockListDocked } from "./components/blockList.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
-import { LegacyActionsCtx, LegacyPostPage } from "./app/legacyFeed.jsx";
-import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath, legacyPath } from "./lib/legacyPosts.js";
+import { LegacyActionsCtx } from "./app/legacyCtx.js";
+import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath, legacyPath, stampMissingSavedAt } from "./lib/legacyPosts.js";
 import { applyPlayEvent, normalizePlayQuest, normalizeServerPlayQuest, unclaimedKeys, onPlayEvent } from "./lib/playQuest.js";
-import { ReviewPage } from "./app/review.jsx";
-import { AccountCenterModal, DeletionPendingModal, SettingsTab } from "./app/settings.jsx";
 import { AnalysisTab } from "./app/analysis.jsx";
-import { CollectionTab } from "./app/dex.jsx";
-import { PuzzleTab } from "./app/puzzle.jsx";
-import { LearnTab } from "./app/learn.jsx";
+// (v0.7.9 성능) 분석 탭(기본 첫 화면) 밖의 탭·창은 처음 열 때 받는다 — src/app/lazyScreens.jsx
+import { PlayPage, PuzzleTab, LearnTab, CollectionTab, SettingsTab, AccountCenterModal, DeletionPendingModal, ReviewPage, MasterPage, LegacyPostPage, ChatsModal, ChatWindow, FriendsModal, UserProfilePage, UserSearchModal, ProfileEditSheet, prefetchScreens } from "./app/lazyScreens.jsx";
 
 import { t, tx } from "./lib/i18n.js";
 import { dexEntryPath } from "./lib/dexRoutes.js";
-import { normalizeLessonState, markLessonDone, lessonSummary } from "./lib/lessons/progress.js";
+import { normalizeLessonState, markLessonDone, lessonSummary } from "./lib/lessons/state.js";   // (v0.7.9) 레슨 본문 없이 진도만
 export default function App() {
   const narrowHeader = useNarrow(480);
   const tinyHeader = useNarrow(345);   // 320px대 폰, 로고·간격을 더 줄이지 않으면 계정 칩이 화면 오른쪽 밖으로 밀려난다
@@ -50,6 +44,8 @@ export default function App() {
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   // (v0.7.5, 사용자 요청 — 새로고침 UX) 첫 렌더부터 맞는 탭(shell.jsx initialTabForPath): 탭 주소 → 그 탭, 퍼즐 딥링크 → 퍼즐, 그 밖 → 마지막으로 보던 탭.
   const [tab, setTab] = useState(() => (typeof window !== "undefined" ? initialTabForPath(window.location.pathname) : "analysis"));
+  // (v0.7.9 성능) 첫 화면이 뜬 뒤 쉬는 시간에 나머지 탭·창 파일을 미리 받아 둔다(지금 탭 먼저) — 탭을 눌러도 기다림이 없게.
+  useEffect(() => prefetchScreens({ store: "play", puzzle: "puzzle", learn: "learn", dex: "dex", set: "settings" }[tab]), []);   // eslint-disable-line react-hooks/exhaustive-deps
   const lastTabKnownRef = useRef(typeof window !== "undefined" && !!lastTabStored());   // 동기 저장된 마지막 탭이 있으면 늦게 오는 저장 상태(d.tab)로 다시 바꾸지 않는다
   useEffect(() => { rememberLastTab(tab); }, [tab]);
   // 서버 응답을 기다려야 화면이 정해지는 딥링크(/puzzle/번호-라인·/review…·초대 링크)는 그동안 엉뚱한 탭 대신 불러오는 중 화면을 덮는다
@@ -687,6 +683,8 @@ export default function App() {
   // 자체는 이미 공개돼 있으므로 no만 실어도 보는 쪽에서 PuzzleCard를 그대로 그릴 수 있음)과 메인
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
+  // (v0.7.9, 사용자 요청) 저장 시각이 없는 옛 유산에 한 번 지금 시각을 찍어 둔다(게시물 날짜가 매일 "오늘"로 바뀌지 않게 고정) — lib/legacyPosts.js stampMissingSavedAt
+  useEffect(() => { if (!loaded) return; setProfile((p) => { const m = stampMissingSavedAt(p.legacies); return m === p.legacies ? p : { ...p, legacies: m }; }); }, [loaded, profile.legacies]);
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", bio: profile.bio || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, puzzleRating: puzzleRating || 800, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: lessonSummary(lessonState), lessonsDone: Object.keys((lessonState && lessonState.done) || {}).slice(0, 400), legacies: profile.legacies || null, legacyHistory: null, featuredTitles: featuredTitlesFor(profile.featuredTitles, earnedTitles), featuredPick: Array.isArray(profile.featuredTitles) ? profile.featuredTitles.slice(0, 2) : null, achv: { earned: earnedTitles.size, total: ALL_TITLE_IDS.length } }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.bio, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, puzzleRating, solved, profile.displayId, lessonState, profile.legacies, profile.legacyHistory, profile.featuredTitles, earnedTitles]);   // (v0.7.5) 대표 칭호 2개·업적 수
   useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ savedLegacies, playQuest, unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked: [...reviewUnlocked], deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], seenTitles: [...seenTitles], currentTitle, boardSkin, pieceSkin, dailyQuest, lessons: lessonState, recentOpenings, liveOn, analysisSans, analysisFenRoot, analysisExtra, tab, analysisFuture, analysisFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode })); }, [savedLegacies, playQuest, unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked, deletedPuzzles, archivedPuzzles, earnedTitles, seenTitles, currentTitle, boardSkin, pieceSkin, dailyQuest, lessonState, recentOpenings, liveOn, loaded, analysisSans, analysisFenRoot, analysisExtra, uid, tab, analysisFuture, analysisFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode]);
   useEffect(() => { if (loaded && uid) progressSave(uid, { savedLegacies, playQuest, unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked: [...reviewUnlocked], deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], seenTitles: [...seenTitles], currentTitle, boardSkin, pieceSkin, dailyQuest, lessons: lessonState, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode }); }, [savedLegacies, playQuest, unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked, deletedPuzzles, archivedPuzzles, earnedTitles, seenTitles, currentTitle, boardSkin, pieceSkin, dailyQuest, lessonState, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode]);

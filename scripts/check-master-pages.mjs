@@ -27,7 +27,7 @@ ok(/setMasterSlug\(parseMasterPath\(p\)\)/.test(app), "App: 뒤로/앞으로 가
 ok(/setMasterPageHandler\(/.test(app) && /<MasterPage key=\{masterSlug\}/.test(app), "App: 마스터 페이지 열기 처리기·화면이 없음");
 for (const [f, re, what] of [["src/app/analysis.jsx", /<MasterNameLink name=\{name\}>\{fullPlayerName\(name\)\}<\/MasterNameLink>/, "마스터 통계·대국의 선수 이름"],
   ["src/app/growth.jsx", /<MasterNameLink name=\{picked\.name\}>/, "마스터 스타일의 마스터 이름"],
-  ["src/app/dexMasters.jsx", /<MasterNameLink name=\{profName\}>/, "도감 마스터 카드 제목"],
+  ["src/app/dexMasters.jsx", /<MasterNameLink name=\{profName\}[ >]/, "도감 마스터 카드 제목"],
   ["src/components/masterProfile.jsx", /<MasterNameLink name=\{n\}>/, "자주 만난 상대"]]) ok(re.test(rd(f)), f + ": " + what + "이 마스터 페이지로 이어지지 않음");
 if (fails.length) { console.error("✗ check-master-pages 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-master-pages: 마스터 " + keys.length + "명 고유 주소(/master/<slug>), 이름 표기 → 주소 연결, 라우팅·이름 링크 유지");

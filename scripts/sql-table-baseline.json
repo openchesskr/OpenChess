@@ -341,5 +341,10 @@
     "rating",
     "themes",
     "created_at"
+  ],
+  "explorer_game_pgns": [
+    "game_id",
+    "pgn",
+    "fetched_at"
   ]
 }

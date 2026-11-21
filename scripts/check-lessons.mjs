@@ -80,7 +80,7 @@ for (const l of lessons) {
 //  (v0.7.7, 사용자 요청) 7~9단계(전술 심화·중반 전략·엔드게임 심화)는 남은 등급 놓친 수·부정확·실수
 //  (v0.7.7, 사용자 요청 "레슨 더") 10단계(체크메이트 패턴)는 마지막 등급 블런더
 //  (v0.7.8, 사용자 요청) 레슨 트리 재설계 — 등급의 상징대로: 이론(규칙·기초 이론) → 좋음(좋은 습관) → 부정확 → 실수(흔한 실수) → 블런더(두면 안 되는 실수·약점) → 놓친 수 → 우수(기본 전술) → 최선(전략) → 유일(정확한 엔드게임) → 탁월(희생·메이트 패턴) → 마지막은 항상 오프닝 레파토리(이론 수 변형)
-{ const want = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 설계와 다름: " + STAGES.map((s) => s.grade).join()); }
+{ const want = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 설계와 다름: " + STAGES.map((s) => s.grade).join()); }
 if (STAGES[STAGES.length - 1].id !== REPERTOIRE_STAGE || STAGES[STAGES.length - 1].variant !== "repertoire") fails.push("오프닝 레파토리 단계가 마지막이 아님");
 { const lastNonOpening = lessons.map((l) => l.stage).lastIndexOf(STAGES[STAGES.length - 2].id), firstOpening = lessons.findIndex((l) => l.stage === REPERTOIRE_STAGE); if (firstOpening < 0 || firstOpening < lastNonOpening) fails.push("오프닝별 레슨이 레슨 경로의 가장 마지막이 아님"); }
 { const p = orderProblems(); for (const k of ["missing", "dup", "unknown"]) if (p[k].length) fails.push("레슨 트리(ORDER) " + k + ": " + p[k].join(", ")); }
@@ -89,7 +89,7 @@ for (const l of lessons) { const n = l.steps().length, min = l.stage === REPERTO
 if (lessons.length < 130) fails.push("레슨 수가 줄었음: " + lessons.length + "개(130개 이상이어야 함)");
 // 오프닝 레슨: 수마다 설명이 있고(MEC 또는 보충), 이름 맞히기 보기가 서로 다르며 정답이 그 오프닝 이름이다
 for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
-  const st = l.steps(), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");
+  const st = l.steps().filter((x) => !x.recap), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");   // (v0.7.9) 맨 앞 복습 문제(recap)는 지난 레슨 것
   if (!mv || !ch) { fails.push(l.id + ": 오프닝 레슨에 수 두기·이름 맞히기 스텝이 없음"); continue; }
   mv.line.forEach((g, j) => { if (!g.hint) fails.push(l.id + " 목표" + (j + 1) + ": 힌트 없음"); if (g.say.includes(t("이 오프닝의 다음 수를 두세요."))) fails.push(l.id + " 목표" + (j + 1) + ": MEC 설명이 없는 수 — 수순을 바꾸거나 보충 설명을 넣을 것"); });
   if (new Set(ch.options).size !== ch.options.length) fails.push(l.id + ": 이름 보기 중복");
@@ -127,6 +127,57 @@ for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
     for (const l of lessons) if (seed[l.id] !== LESSON_REWARD) fails.push("서버 seedChapters에 " + l.id + " 보상 " + LESSON_REWARD + "이 없음(" + seed[l.id] + ")");
     for (const k of Object.keys(seed)) if (!ids.has(k)) fails.push("서버 seedChapters에 커리큘럼에 없는 레슨 " + k);
   }
+}
+// (v0.7.9, 사용자 요청) 레슨의 체스 용어는 원문 발음 그대로 — 예전 의역 용어가 다시 들어오면 실패(질식 메이트 → 스모더드 메이트 등)
+{
+  const { readFileSync: rf } = await import("node:fs");
+  const lessonSrc = ["src/lib/lessons/curriculum.js", "src/lib/lessons/curriculumMore.js", "src/lib/lessonPuzzles.js"].map((f) => rf(new URL("../" + f, import.meta.url), "utf8")).join("\n");
+  const strs = [...lessonSrc.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).filter((x) => /[가-힣]/.test(x));
+  const OLD = ["질식 메이트", "스머더드", "승격", "이중 공격", "빗나가게 하기", "과부하", "중간수", "수비수 제거", "복도 메이트", "보든 메이트", "아나스타시아", "그리스 선물", "교환 희생", "퀸 희생", "희생", "폰 돌파", "겹친 폰", "고립된 폰", "통과한 폰", "열린 파일", "예방 수", "공간 우위", "후보 수", "핵심 칸", "폰의 정사각형", "영구 체크", "사다리", "학자 메이트", "바보 메이트", "좋은 비숍", "나쁜 비숍", "킹 차단", "유인"];
+  for (const w of OLD) { const hit = strs.find((x) => x.includes(w)); if (hit) fails.push("레슨 용어는 원문 발음으로(예전 표기 \"" + w + "\"): " + hit.slice(0, 50)); }
+}
+
+// (v0.7.9, 사용자 요청) 가르친 뒤 묻기 — 객관식 질문은 ① 바로 앞 스텝이 설명(read, 대화 포함)이거나 ② 정답의 낱말 절반 이상이 이미 그 레슨에서
+//  나온 것이어야 한다(제목·설명·수 안내·직접 둔 수 포함). 설명 없이 상식으로 풀게 하는 질문이 생기면 curriculumTalkData.js의 TEACH에 설명을 넣을 것.
+{
+  const strip = (w) => w.replace(/[.,·?!'"()…:「」]/g, "").replace(/(으로|에서|에게|까지|부터|이라|이다|입니다|합니다|하는|하면|해야|으면|은|는|이|가|을|를|과|와|로|에|의|도|만|한|된|할|해)$/, "");
+  const words = (x) => String(x).split(/\s+/).map(strip).filter((w) => w.length >= 2);
+  const untaught = [];
+  for (const l of lessons) {
+    let ctx = l.title() + " " + l.sub(), prev = null;
+    for (const s of l.body()) {
+      if (s.kind === "choice" && !s.review) {
+        const ws = words(s.options[s.answer]), hit = ws.filter((w) => ctx.includes(w)).length;
+        if (!(prev && prev.kind === "read") && ws.length && hit / ws.length < 0.5) untaught.push(l.id + ": \"" + s.say + "\" (정답 \"" + s.options[s.answer] + "\")");
+        ctx += " " + s.options[s.answer];
+      }
+      ctx += " " + (s.say || "");
+      if (s.line && s.fen) { try { const c = new Chess(s.fen); for (const g of s.line) { if (g.say) ctx += " " + g.say; const u = g.goal && g.goal.uci ? g.goal.uci[0] : g.hint; if (u) { const m = c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] }); if (m) ctx += " " + m.san; } if (g.reply) { const r = c.move({ from: g.reply.slice(0, 2), to: g.reply.slice(2, 4), promotion: g.reply[4] }); if (r) ctx += " " + r.san; } } } catch { /* 합법성은 위에서 검사 */ } }
+      prev = s;
+    }
+  }
+  for (const u of untaught) fails.push("설명 전에 묻는 질문 — " + u);
+}
+
+// (v0.7.9, 사용자 요청) 레슨 연계 — 첫 레슨을 뺀 모든 레슨에 지난 레슨과 이어지는 대사(LINK)가 있고, 여는 대화에 지난 레슨 복습 문제가 있다.
+//  대화 데이터(curriculumTalkData.js·번역)는 scripts/lessonTalk/*.json에서 만든 최신본이어야 한다.
+{
+  const { LINK, TEACH } = await import("../src/lib/lessons/curriculumTalk.js");
+  lessons.forEach((l, i) => {
+    if (i && !LINK[l.id]) fails.push(l.id + ": 지난 레슨과 이어지는 대사(LINK)가 없음 — scripts/lessonTalk/에 추가");
+    if (i && !l.steps().some((s) => s.recap)) fails.push(l.id + ": 여는 대화에 지난 레슨 복습 문제가 없음");
+  });
+  for (const id of [...Object.keys(LINK), ...Object.keys(TEACH)]) if (!lessons.some((l) => l.id === id)) fails.push("레슨 대화 데이터에 없는 레슨 id: " + id);
+  for (const [id, qs] of Object.entries(TEACH)) { const l = lessons.find((x) => x.id === id); if (!l) continue; const n = l.body().filter((s) => s.kind === "choice" && !s.review).length; for (const k of Object.keys(qs)) if (+k >= n) fails.push(id + ": TEACH " + k + "번 질문이 없음(질문 " + n + "개)"); }
+  const { execFileSync } = await import("node:child_process");
+  try { execFileSync(process.execPath, [new URL("./build-lesson-talk.mjs", import.meta.url).pathname, "--check"], { stdio: "pipe" }); }
+  catch (e) { fails.push(String(e.stderr || e.message).trim()); }
+}
+
+// (v0.7.9, 사용자 요청) 레슨 하나는 최소 1분 — 여는 대화(복습)를 뺀 본문만으로 예상 시간이 LESSON_MIN_SECONDS 이상(lessons/duration.js).
+{
+  const { lessonSeconds, LESSON_MIN_SECONDS } = await import("../src/lib/lessons/duration.js");
+  for (const l of lessons) { const sec = lessonSeconds(l.body()); if (sec < LESSON_MIN_SECONDS) fails.push(l.id + ": 예상 " + sec + "초 — 레슨이 1분보다 짧음(curriculumPractice.js에 연습 문제를 더할 것)"); }
 }
 if (fails.length) { console.error("✗ check-lessons 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-lessons: 단계 " + STAGES.length + "개 · 레슨 " + lessons.length + "개 · 스텝 " + steps + "개(수 두기 목표 " + moves + "개)가 모두 합법이고 정답·힌트·응수가 맞으며, 서버 보상 목록과 일치한다");

@@ -3,7 +3,7 @@
 이 문서는 OpenChess에 **Apple 로그인**과 **Facebook 로그인**을 실제로 켜기 위해, Supabase
 대시보드 바깥에서 사람이 직접 해야 하는 절차를 정리합니다. 코드(`src/App.jsx`, `supabase-setup.sql`)는
 이미 준비되어 있고 provider 이름만 다를 뿐 Google 로그인과 완전히 같은 방식(Supabase Auth의
-OAuth 리다이렉트)으로 동작하므로, **여기 정리된 대시보드 설정만 마치면 추가 배포 없이 바로 켜집니다.**
+OAuth 리다이렉트)으로 동작하므로, **여기 정리된 대시보드 설정만 마치면 추가 배포 없이 바로 켜집니다.** (v0.7.9부터 로그인 창은 Supabase에 켜진 제공자의 버튼만 보여 주므로, 켜기 전에는 버튼이 숨겨져 있다가 켜는 순간 나타납니다.)
 
 작업 순서는 항상 같습니다: ① 각 회사의 개발자 콘솔에서 "이 앱이 Supabase Auth를 통해 로그인해도
 된다"는 자격증명(Client ID/Secret)을 만든다 → ② Supabase 대시보드 **Authentication → Providers**에
@@ -48,34 +48,49 @@ Apple 로그인은 **유료 Apple Developer Program 멤버십(연 $99)** 이 있
 
 ### Supabase에 입력
 
-Supabase 대시보드 → **Authentication → Providers → Apple** → 켜기(Enable) → 위 4가지 값을
-붙여넣고 저장합니다. (Supabase가 이 4가지로 매번 새 client secret을 자동으로 서명해 만들어주므로,
-Apple처럼 client secret이 6개월마다 만료되는 방식이어도 따로 갱신할 필요가 없습니다.)
+Supabase 대시보드 → **Authentication → Providers(또는 Sign In / Providers) → Apple** → 켜기(Enable).
+
+- **Client IDs**: 위 3번의 Services ID(예: `kr.openchess.web`). 0.9.0에 iOS 앱을 붙이면 앱 번들 ID(`kr.openchess.app`)를 쉼표로 덧붙인다.
+- **Secret Key (for OAuth)**: Team ID·Key ID·Services ID·`.p8` 내용으로 **서명한 JWT 문자열**이다. `.p8` 파일 내용을 그대로 넣는 칸이 아니다.
+  Supabase 문서(Login with Apple)에 이 JWT를 만들어 주는 도구가 있다(브라우저 안에서 서명하며, `.p8`은 서버로 보내지 않는다).
+  - **(v0.7.9 정정)** 예전 이 문서에는 "Supabase가 4가지 값으로 자동 서명하니 갱신이 필요 없다"고 적혀 있었지만, 대시보드에 JWT를 넣는 방식이면
+    **Apple 규칙상 최대 6개월 뒤 만료**된다. 만료되면 Apple 로그인만 조용히 실패하므로, 만든 날짜 기준 **5개월 뒤로 달력 알림**을 걸어 두고
+    같은 도구로 새 JWT를 만들어 바꿔 넣는다(`.p8`·Key ID는 그대로 재사용). 대시보드 칸 이름이 위와 다르면 화면의 안내를 우선한다.
+
+**Apple 로그인에서 알아둘 것**
+- 사용자 이름은 **처음 로그인할 때 한 번만** 넘어온다. OpenChess는 첫 로그인 때 아이디 설정 창(UsernameSetupModal)을 따로 띄우므로 영향은 없다.
+- 사용자가 "이메일 가리기"를 고르면 `xxxx@privaterelay.appleid.com` 주소가 넘어온다. 이 주소로 우리가 메일을 보내려면 Apple 개발자 페이지
+  **Services → Sign in with Apple for Email Communication**에 보내는 도메인을 등록해야 한다(지금 OpenChess는 로그인 외의 메일을 보내지 않아 당장은 불필요).
+- 같은 사람이 이메일 가리기로 들어오면 기존 이메일 계정과 주소가 달라 자동 연결(아래 3번)이 되지 않는다. 계정 센터의 "연결하기"로 합치게 안내한다.
 
 ---
 
 ## 2) Facebook
 
-1. https://developers.facebook.com/apps 접속 → **앱 만들기(Create App)** → 유형은
-   "소비자(Consumer)" 또는 "기타(Other)" 선택 → 이름 입력(예: OpenChess) → 만들기.
-2. 만들어진 앱 대시보드에서 **Facebook 로그인(Facebook Login)** 제품을 "설정(Set Up)"으로
-   추가합니다. 플랫폼은 **웹(Web)**을 선택하고, Site URL에 여러분의 사이트 주소(예:
-   `https://openchess.kr`)를 입력합니다.
-3. 좌측 메뉴 **Facebook 로그인 → 설정(Settings)**에서 **유효한 OAuth 리디렉션 URI(Valid OAuth
-   Redirect URIs)**에 위 0)의 콜백 URL을 추가하고 저장합니다.
-4. 좌측 메뉴 **설정(Settings) → 기본 설정(Basic)**에서 **앱 ID(App ID)**와 **앱 시크릿 코드(App
-   Secret)**를 확인합니다("표시(Show)"를 누르면 비밀번호 확인 후 보입니다). 이 화면에서 **개인정보
-   처리방침 URL**, **앱 도메인**도 채워야 다음 단계(앱 검수)가 가능합니다.
-5. 앱을 만들면 기본적으로 "개발 모드"라 여러분(앱 관리자로 등록된 Facebook 계정)만 로그인을 테스트할
-   수 있습니다. **실제 사용자에게 열려면** 상단의 모드 스위치를 "라이브(Live)"로 바꿔야 하고, 이때
-   Facebook이 **앱 검수(App Review)** — `email`, `public_profile` 권한 사용 승인 — 를 요구할 수
-   있습니다(대개 이 두 권한은 기본으로 승인되어 있어 추가 검수 없이 라이브 전환만으로 충분한 경우가
-   많습니다만, 반려되면 화면 녹화 등 사용 사례 증빙을 요구할 수 있습니다).
+Facebook 로그인은 무료다. Meta 개발자 계정(본인 Facebook 계정으로 https://developers.facebook.com 가입)만 있으면 된다.
+**(v0.7.9 정정)** Meta가 앱 만들기 화면을 "앱 유형" 대신 "사용 사례(Use case)" 방식으로 바꿔, 메뉴 이름이 예전 문서와 다르다. 화면 이름이 조금 달라도 순서는 같다.
+
+1. https://developers.facebook.com/apps → **앱 만들기(Create App)** → 사용 사례에서
+   **"Facebook 로그인으로 사용자 인증 및 데이터 요청(Authenticate and request data from users with Facebook Login)"** 선택 → 앱 이름(OpenChess)·연락처 이메일 입력 → 만들기.
+   비즈니스 포트폴리오 연결은 "지금은 연결 안 함"으로 넘어가도 된다.
+2. 앱 대시보드 → **사용 사례(Use cases) → Facebook 로그인 → 맞춤 설정(Customize)**:
+   - **권한(Permissions)**에서 `email`이 "추가됨(Added)"인지 확인하고, 아니면 **추가**한다. `public_profile`은 기본으로 들어 있다.
+     (`email`이 없으면 로그인은 되지만 이메일이 비어 와서, 이미 이메일로 가입한 계정과 자동 연결이 안 된다.)
+   - **설정(Settings)** → **유효한 OAuth 리디렉션 URI(Valid OAuth Redirect URIs)**에 0)의 콜백 URL
+     (`https://<project-ref>.supabase.co/auth/v1/callback`)을 넣고 저장. "클라이언트 OAuth 로그인"·"웹 OAuth 로그인"은 켜짐(기본값).
+3. **앱 설정(App settings) → 기본 설정(Basic)**:
+   - **앱 ID**·**앱 시크릿 코드**(표시 버튼 → 비밀번호 확인) — Supabase에 넣을 값.
+   - **개인정보처리방침 URL**: `https://openchess.kr/privacy`
+   - **서비스 약관 URL**: `https://openchess.kr/terms`
+   - **사용자 데이터 삭제**: "데이터 삭제 안내 URL" 선택 → `https://openchess.kr/account-deletion`
+   - **앱 아이콘**(1024×1024)·**카테고리**(게임 또는 교육)·**앱 도메인**(`openchess.kr`)
+   - 맨 아래 **플랫폼 추가 → 웹사이트** → 사이트 URL `https://openchess.kr/`
+4. **게시(Publish)**: 개발 모드에서는 앱 관리자·테스터로 등록된 계정만 로그인된다. 3번 항목을 다 채우면 대시보드의 **게시(Publish)**(또는 앱 모드 "라이브")로
+   전환한다. `email`·`public_profile`은 기본 권한(Standard Access)이라 보통 **앱 검수 없이** 게시만으로 모든 사용자가 쓸 수 있다. 화면이 검수·비즈니스 인증을 요구하면 그 안내를 따른다.
 
 ### Supabase에 입력
 
-Supabase 대시보드 → **Authentication → Providers → Facebook** → 켜기(Enable) → 위에서 확인한
-**App ID**를 Client ID에, **App Secret**을 Client Secret에 입력하고 저장합니다.
+Supabase 대시보드 → **Authentication → Providers → Facebook** → 켜기(Enable) → **Client ID = 앱 ID**, **Client Secret = 앱 시크릿 코드** → 저장.
 
 ---
 
@@ -111,9 +126,11 @@ Google/Apple/Facebook으로 로그인을 시도해도 새 계정이 아니라 �
 
 - [ ] Supabase 콜백 URL(`https://<project-ref>.supabase.co/auth/v1/callback`)을 Apple Services ID의
       Return URLs와 Facebook의 Valid OAuth Redirect URIs 양쪽에 등록했다.
-- [ ] Supabase Authentication → Providers에서 Apple을 켜고 Services ID/Team ID/Key ID/.p8 키를 입력했다.
+- [ ] Supabase Authentication → Providers에서 Apple을 켜고 Client IDs(Services ID)와 Secret Key(서명한 JWT)를 입력했다.
+- [ ] Apple Secret Key 만료 대비 달력 알림(만든 날 + 5개월)을 걸었다.
 - [ ] Supabase Authentication → Providers에서 Facebook을 켜고 App ID/App Secret을 입력했다.
-- [ ] Facebook 앱을 "라이브" 모드로 전환했다(실제 사용자가 쓸 수 있도록).
+- [ ] Facebook 사용 사례 권한에 `email`이 추가돼 있고, 개인정보처리방침·약관·데이터 삭제 URL을 채운 뒤 앱을 게시(라이브)했다.
+- [ ] (v0.7.9) 로그인 창에 Apple·Facebook 버튼이 나타나는지 확인했다 — 버튼은 Supabase에서 켜진 제공자만 보인다(`src/lib/authProviders.js`, BUG-193).
 - [ ] Authentication → Settings에서 "Allow manual linking"을 켰다(계정 센터의 연결/해제 기능용).
 - [ ] (권장) "Allow automatic linking"도 켰다.
 - [ ] `supabase-setup.sql`을 SQL Editor에서 다시 실행해 `delete_own_account()`를 반영했다.

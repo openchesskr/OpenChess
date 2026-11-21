@@ -18,9 +18,8 @@ import { ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, SCHEMATIC_ZO
 
 const root = new URL("..", import.meta.url).pathname;
 const src = readAppSource();
-const m = src.match(/const SNAP = \/\*__DATA__\*\/ (\{.*\});\s*$/m);
-if (!m) { console.error("✗ dex layout check: App.jsx에서 SNAP 데이터를 찾지 못했어요."); process.exit(1); }
-const SNAP = JSON.parse(m[1]);
+// (v0.7.9) SNAP은 src/data/snapTree.js로 분리(별도 청크) — 순수 데이터 모듈이라 그대로 import한다.
+const { SNAP } = await import("../src/data/snapTree.js");
 const stripSuffix = (s) => String(s).replace(/[+#?!]+$/g, "");
 const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
 

@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen, Handshake, FileText, Clock, ListChecks, Brain, TrendingUp, Route, Repeat2, Flame, Undo2, EyeOff, Timer, Crosshair, Gem, Shuffle, Ban, Swords, Hourglass, ScanLine, Star, Trophy, Sparkles, Sword, ChevronsUp, Compass, ArrowRight, Medal, Pause, Sun, Scissors, Maximize2, RefreshCw, ShieldCheck, Bookmark, BookMarked, RotateCw, Heart } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Puzzle, Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen, Handshake, FileText, Clock, ListChecks, Brain, TrendingUp, Route, Repeat2, Flame, Undo2, EyeOff, Timer, Crosshair, Gem, Shuffle, Ban, Swords, Hourglass, ScanLine, Star, Trophy, Sparkles, Sword, ChevronsUp, Compass, ArrowRight, Medal, Pause, Sun, Scissors, Maximize2, RefreshCw, ShieldCheck, Bookmark, BookMarked, RotateCw, Heart } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 // 레슨 아이콘(curriculum.js의 icon 이름) — 아이콘 전체를 번들에 싣지 않도록 쓰는 것만 가져온다(check-lessons가 빠진 이름을 막는다)
 export const LESSON_ICONS = { Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen, Lock, Lightbulb,
   Handshake, FileText, Clock, ListChecks, Brain, TrendingUp, Route, Repeat2, Flame, Undo2, EyeOff, Timer, Crosshair, Gem, Shuffle, Ban, Swords, Hourglass, ScanLine, Star, Trophy, Sparkles, Sword, ChevronsUp, Compass, ArrowRight, Medal, Pause, Sun, Scissors, Maximize2, RefreshCw, ShieldCheck, Bookmark, BookMarked, RotateCw, Heart };
@@ -16,8 +16,10 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
-import { FacetDiamond, FacetCrown, GOLD as GOLD_FACET } from "../components/facetIcons.jsx";
+import { FacetDiamond, FacetCrown, FacetCrosshair, GOLD as GOLD_FACET, facetRamp } from "../components/facetIcons.jsx";
+import { PieceIcon, BoardIcon } from "../components/pieceIcons.jsx";   // (v0.7.9) 새 파셋 기물·보드 아이콘
 import { noteLessonViewed } from "../lib/lessonPuzzles.js";
+import { ThemePuzzles } from "./themePuzzles.jsx";   // (v0.7.9) 레슨 완료 화면의 추가 학습
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
@@ -38,11 +40,57 @@ const stageNo = (id) => STAGES.findIndex((s) => s.id === id) + 1;
 const CHECKER = { backgroundImage: "repeating-conic-gradient(rgba(255,255,255,.035) 0 25%, transparent 0 50%)", backgroundSize: "64px 64px",
   WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 80%)", maskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 80%)" };
 
-const pieceImg = (set, p, color = "w") => { const s = (PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[p]; return s && s[color] ? s[color].src : ""; };
-function LessonIcon({ icon, size, color }) {
-  if (String(icon).startsWith("piece:")) return <img src={pieceImg("classic", icon.slice(6), "w")} alt="" draggable={false} style={{ width: size * 1.3, height: size * 1.3, objectFit: "contain", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }} />;
-  const I = LESSON_ICONS[icon] || Circle;
-  return <I size={size} strokeWidth={2.2} color={color} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.3))" }} />;
+const pieceImg = (set, p, color = "w") => { const s = (PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[p]; return s && s[color] ? s[color].src : ""; };   // 오프닝 띠·단계 배경의 실제 보드 기물 그림
+// (v0.7.9, 사용자 요청) 레슨 아이콘 = 새 파셋 기물(또는 8×8 보드) + 오른쪽 아래 개념 배지(OpenChess 파셋 아이콘 세트). [기물, 배지]
+//  기물은 그 레슨의 주인공(전술을 거는 기물·지켜야 할 킹 등), 배지는 개념(체크=번개, 핀=핀, 포크=갈래 …). 배지가 없으면 기물만.
+export const LESSON_GLYPH = {
+  b_board: ["board"], b_rook: ["R"], b_bishop: ["B"], b_queen: ["Q"], b_knight: ["N"], b_pawn: ["P"], b_king: ["K"],
+  r_check: ["K", "Zap"], r_mate: ["K", "Crown"], r_stalemate: ["K", "Scale"], r_castle: ["K", "ArrowRightLeft"], r_enpassant: ["P", "MoveDiagonal"], r_promotion: ["P", "ChevronsUp"],
+  r_draws: ["K", "Handshake"], r_notation: ["board", "FileText"], r_values: ["Q", "Coins"], o_center: ["board", "Target"], o_develop: ["N", "Rocket"], o_safety: ["K", "Shield"], o_tempo: ["N", "Clock"],
+  g_protect: ["B", "Shield"], g_candidate: ["N", "ListChecks"], g_threat: ["Q", "Brain"], t_counting: ["R", "Coins"], g_trade: ["B", "RefreshCw"], g_activity: ["N", "TrendingUp"], g_rooks: ["R", "Route"],
+  i_twice: ["N", "Repeat2"], i_earlyqueen: ["Q", "Flame"], i_kingpawns: ["P", "Lock"], i_passive: ["B", "Undo2"], st_badbishop: ["B", "Scale"], st_doubled: ["P", "ArrowUpDown"], st_isolated: ["P", "Target"],
+  t_hanging: ["N", "HandCoins"], x_ignore: ["K", "EyeOff"], x_scholar: ["Q", "Timer"], x_f7: ["P", "Crosshair"], x_greedy: ["Q", "Gem"], x_recapture: ["P", "Shuffle"], o_trap: ["K", "ShieldAlert"],
+  z_foolsmate: ["K", "Ban"], m_backrank: ["R", "PanelBottom"], t_trapped: ["B", "Square"], z_queenhang: ["Q", "ShieldAlert"], z_forksq: ["N", "Swords"], z_stalemate: ["K", "Hourglass"], z_holes: ["P", "ScanLine"],
+  n_free: ["R", "Star"], n_mate1: ["Q", "Trophy"], n_checks: ["K", "Sparkles"], n_punish: ["N", "Sword"], n_promo: ["P", "ChevronsUp"],
+  t_fork: ["N", "GitFork"], t_pin: ["B", "Pin"], t_skewer: ["R", "ArrowRightLeft"], t_discovered: ["B", "Eye"], t_double: ["Q", "Zap"], t_removal: ["N", "Target"], t_doublecheck: ["R", "Zap"],
+  t_decoy: ["Q", "Compass"], t_deflection: ["R", "ArrowRight"], t_overload: ["Q", "Medal"], t_intermezzo: ["N", "Pause"], t_xray: ["R", "Sun"], t_interference: ["B", "Scissors"],
+  st_openfile: ["R", "Rows3"], st_seventh: ["R", "ChevronsUp"], st_outpost: ["N", "Shield"], st_passed: ["P", "Rocket"], st_space: ["P", "Maximize2"], st_goodtrade: ["B", "RefreshCw"], st_prophylaxis: ["K", "ShieldCheck"], st_kingattack: ["P", "Flag"],
+  m_queen: ["Q", "Crown"], m_ladder: ["R", "Rows3"], e_rookmate: ["R", "Flag"], e_square: ["P", "Square"], e_opposition: ["K", "ArrowUpDown"], e_keysquare: ["K", "Target"], e_activeking: ["K", "TrendingUp"],
+  e_rookbehind: ["R", "Route"], e_cutoff: ["R", "PanelBottom"], e_promote: ["P", "Crown"], e_lucena: ["R", "Bookmark"], e_philidor: ["R", "BookMarked"], e_perpetual: ["Q", "RotateCw"],
+  m_smothered: ["N", "Crown"], m_arabian: ["R", "Crown"], m_h7: ["Q", "Target"], m_corridor: ["R", "ArrowRightLeft"], m_boden: ["B", "MoveDiagonal"], m_epaulette: ["Q", "Shield"], m_anastasia: ["N", "Flag"],
+  t_breakthrough: ["P", "Rocket"], b_greek: ["B", "Gem"], b_legal: ["N", "Lightbulb"], b_queensac: ["Q", "Heart"], b_exchsac: ["R", "Trophy"],
+  // (v0.7.9) 계산과 조합
+  c_mate2: ["Q", "Target"], c_quiet: ["K", "Pause"], c_mate3: ["Q", "Route"], c_sac: ["R", "Gem"], c_defense: ["K", "ShieldAlert"],
+};
+// 배지 바탕: 원을 대각선으로 두 면(왼쪽 위 밝게) — 단계 색
+function GlyphChip({ size, th }) {
+  const R = facetRamp(th.c);   // 단계 색의 6단계 ramp에서만
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ position: "absolute", inset: 0 }}>
+      <path d="M12 1 A11 11 0 0 0 4.22 19.78 L19.78 4.22 A11 11 0 0 0 12 1Z" fill={R.l2} />
+      <path d="M4.22 19.78 A11 11 0 0 0 19.78 4.22Z" fill={R.base} />
+      <path d="M6.4 5.6 L9.2 3.9 L8.2 6.6Z" fill={R.hi} />
+    </svg>
+  );
+}
+function LessonIcon({ lesson, icon, size, th }) {
+  const g = lesson && LESSON_GLYPH[lesson.id];
+  if (!g) {   // 새 레슨에 그림을 아직 안 정했으면 예전처럼 아이콘 하나
+    const I = LESSON_ICONS[icon] || Circle;
+    return <I size={size * 0.62} color="#FFFFFF" />;
+  }
+  const [base, badge] = g, B = badge ? LESSON_ICONS[badge] : null, chip = size * 0.54;
+  return (
+    <span aria-hidden="true" style={{ position: "relative", width: size, height: size, display: "inline-block", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>
+      {base === "board" ? <BoardIcon size={size} /> : <PieceIcon type={base} size={size} color="w" />}
+      {B && th && (
+        <span style={{ position: "absolute", right: -chip * 0.28, bottom: -chip * 0.08, width: chip, height: chip, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <GlyphChip size={chip} th={th} />
+          <span style={{ position: "relative", display: "flex" }}><B size={chip * 0.58} color="#FFFFFF" /></span>
+        </span>
+      )}
+    </span>
+  );
 }
 /** 수 등급 배지(원 + 흰 글리프) — 단계의 상징. */
 export function GradeBadge({ stage, size = 36, glow = false }) {
@@ -52,6 +100,10 @@ export function GradeBadge({ stage, size = 36, glow = false }) {
       background: "radial-gradient(circle at 35% 30%, " + th.hi + ", " + th.c + " 62%, " + th.lo + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 " + Math.max(2, size / 14) + "px 0 " + th.edge + (glow ? ", 0 0 " + size * 0.6 + "px " + alpha(th.c, 0.55) : "") }}>
       <img src={th.icon} alt="" draggable={false} style={{ width: size * 0.58, height: size * 0.58, objectFit: "contain" }} />
       {/* (v0.7.8, 사용자 요청) 오프닝 레파토리 단계 = 이론 수 아이콘 + 위에 얹은 금빛 파셋 왕관(변형 아이콘) */}
+      {/* (v0.7.9) 계산과 조합 단계 = 우수한 수 아이콘 + 파셋 조준경(여러 수 앞을 겨눈다) */}
+      {stage.variant === "calc" && (
+        <FacetCrosshair size={size * 0.5} color={GOLD_FACET.l1} style={{ position: "absolute", top: -size * 0.2, right: -size * 0.12, filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.45))" }} />
+      )}
       {stage.variant === "repertoire" && (
         <svg viewBox="0 0 24 24" width={size * 0.52} height={size * 0.52} style={{ position: "absolute", top: -size * 0.22, right: -size * 0.12, overflow: "visible", filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.45))" }}>
           <FacetCrown x={12} y={12} s={20} R={GOLD_FACET} />
@@ -214,7 +266,7 @@ function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
         boxShadow: locked ? "inset 0 0 0 1.5px rgba(255,255,255,.12)" : "inset 0 2px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.18)" }} />
       <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
         {lesson.motif ? <TileName name={lesson.title()} size={size} locked={locked} edge={th.edge} />
-          : locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
+          : locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon lesson={lesson} icon={lesson.icon} size={size * 0.52} th={th} />}
       </span>
       {/* (v0.7.8, 사용자 요청) 완료 체크는 마름모 위쪽 꼭짓점에 — 높이는 그대로 두고 가로만 가운데로 */}
       {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, left: "50%", marginLeft: -10, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
@@ -471,6 +523,41 @@ function CtaButton({ theme, onClick, disabled, children, wide, minWidth = 168 })
   );
 }
 
+/* ── (v0.7.9) 두 코치의 대화 ── */
+// 말하는 코치: 스텝에 who가 있으면 그대로, 없으면 보드 없는 설명 구간 안에서 MILKU → KOKOA 번갈아(구간 첫 말은 MILKU).
+export function speakerOf(steps, k) {
+  let a = k; while (a > 0 && steps[a - 1].kind === "read" && !steps[a - 1].fen) a--;
+  let who = "milku";
+  for (let i = a; i <= k; i++) who = steps[i].who || (i === a ? "milku" : who === "milku" ? "kokoa" : "milku");
+  return who;
+}
+// 표정: 질문은 생각, 주의·실수 이야기는 놀람, 칭찬·성공은 기쁨, 나머지는 기본(MILKU 윙크·KOKOA 웃음). 스텝의 mood가 있으면 그것.
+export function moodOf(text, who, cheer) {
+  const s = String(text || "");
+  if (cheer) return who === "kokoa" ? "celebrate" : "great";
+  if (/[?？]\s*$/.test(s)) return "think";
+  if (/주의|조심|실수|위험|함정|놓치|잃|블런더/.test(s)) return "surprise";
+  if (/좋|훌륭|잘했|축하|완성|멋지|!/.test(s)) return who === "kokoa" ? "celebrate" : "great";
+  return who === "kokoa" ? "happy" : "wink";
+}
+function DialogueBubble({ who, mood, text, latest, narrow, question }) {
+  const kokoa = who === "kokoa", av = narrow ? 46 : 60;
+  const bg = kokoa ? "#3B2417" : PAPER, fg = kokoa ? "#FFE9CF" : INK, edge = kokoa ? "rgba(255,214,170,.22)" : "transparent";
+  return (
+    <motion.div initial={latest ? { opacity: 0, y: 10, scale: 0.98 } : false} animate={{ opacity: latest ? 1 : 0.78, y: 0, scale: 1 }} transition={{ duration: 0.28, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ display: "flex", flexDirection: kokoa ? "row-reverse" : "row", alignItems: "flex-end", gap: narrow ? 8 : 12 }}>
+      <Mascot name={who} emotion={mood} size={av} />
+      <div style={{ maxWidth: "min(100%, 520px)", minWidth: 0, display: "flex", flexDirection: "column", alignItems: kokoa ? "flex-end" : "flex-start" }}>
+        <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: kokoa ? "#F2B98A" : "#E8D3A6", margin: kokoa ? "0 6px 4px 0" : "0 0 4px 6px" }}>{kokoa ? "KOKOA" : "MILKU"}</span>
+        <div style={{ position: "relative", padding: narrow ? "11px 14px" : "14px 18px", borderRadius: kokoa ? "18px 18px 6px 18px" : "18px 18px 18px 6px", background: bg, color: fg, border: "1px solid " + edge,
+          fontSize: narrow ? 14.5 : 15.5, fontWeight: question ? 900 : 700, lineHeight: 1.55, boxShadow: latest ? "0 12px 26px -12px rgba(0,0,0,.6)" : "none" }}>
+          {text}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ============================================================ 학습 화면 ============================================================ */
 const sqList = (arr) => (arr || []).map(sqToRc);
 export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext, coins }) {
@@ -570,8 +657,29 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
       </div>
     </div>
   );
+  // (v0.7.9, 사용자 요청) 보드 없는 설명은 한 화면에 말풍선을 아래로 쌓아 MILKU·KOKOA 두 코치가 대화하듯 이어 간다.
+  //  보드 없는 read 스텝이 이어지는 구간(+ 그 뒤의 보드 없는 객관식 질문)이 한 장면이다. "다음"을 누를 때마다 말풍선이 하나씩 아래에 붙는다.
+  const scene = useMemo(() => {
+    if (!step || finished || step.fen || (step.kind !== "read" && step.kind !== "choice")) return null;
+    let a = si; while (a > 0 && steps[a - 1].kind === "read" && !steps[a - 1].fen) a--;
+    return steps.slice(a, si + 1).map((s, k) => ({ s, k: a + k }));
+  }, [steps, si, step, finished]);
+  const sceneEnd = useRef(null);
+  const choiceRef = useRef(null);
+  // 새 말풍선이 보이도록 아래로 — 질문이면 보기까지 보이도록 보기 목록 끝으로(휴대폰에서 보기가 화면 아래로 밀려나지 않게)
+  useEffect(() => { const el = step && step.kind === "choice" && choiceRef.current ? choiceRef.current : scene ? sceneEnd.current : null; if (el) el.scrollIntoView({ block: "end", behavior: "smooth" }); }, [si, scene]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const dialoguePanel = scene ? (
+    <div aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: narrow ? 10 : 14 }}>
+      {scene.map(({ s, k }, i) => {
+        const who = speakerOf(steps, k), last = i === scene.length - 1;
+        const text = s.say;
+        return <DialogueBubble key={k} who={who} mood={s.mood || moodOf(text, who, last && solved && s.kind !== "read")} text={text} latest={last} narrow={narrow} question={s.kind === "choice"} />;
+      })}
+      <span ref={sceneEnd} />
+    </div>
+  ) : null;
   const choicePanel = step && step.kind === "choice" && !finished ? (
-    <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+    <div ref={choiceRef} role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16, scrollMarginBottom: 12 }}>
       {step.options.map((o, i) => {
         const right = solved && i === step.answer, bad = picked === i && !solved;
         const bc = right ? th.hi : bad ? "#E0675C" : "rgba(255,255,255,.14)";
@@ -588,8 +696,9 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
       })}
     </div>
   ) : null;
+  const [studyOpen, setStudyOpen] = useState(false);
   const doneView = (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 14px" }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: studyOpen ? "flex-start" : "center", padding: "20px 14px" }}>
       <div style={{ textAlign: "center", maxWidth: 420 }}>
         <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 240, damping: 16 }} style={{ position: "relative", display: "inline-block", marginBottom: 22 }}>
           <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 260, height: 260, marginLeft: -130, marginTop: -130, borderRadius: "50%", background: "radial-gradient(circle, " + alpha(th.c, 0.45) + ", transparent 62%)" }} />
@@ -605,7 +714,10 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
           <button type="button" onClick={onClose} className="press" style={{ height: 46, padding: "0 20px", borderRadius: 13, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", fontFamily: SITE_FONT, fontSize: 14.5, fontWeight: 800, cursor: "pointer" }}>{t("레슨 목록")}</button>
           {nextL && <CtaButton theme={stageTheme(stageOf(nextL.stage))} onClick={() => onNext(nextL)}>{t("다음 레슨: {0}", nextL.title())}</CtaButton>}
         </div>
+        {/* (v0.7.9, 사용자 요청·BUG-199) 레슨을 마치면 바로 그 레슨 테마의 추가 학습 퍼즐을 풀 수 있다 */}
+        {!studyOpen && <button type="button" onClick={() => setStudyOpen(true)} className="press" style={{ marginTop: 14, height: 42, padding: "0 18px", borderRadius: 12, border: "1px solid " + alpha(th.hi, 0.45), background: alpha(th.c, 0.16), color: th.hi, fontFamily: SITE_FONT, fontSize: 13.5, fontWeight: 900, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}><Puzzle size={16} />{t("추가 학습: 이 레슨의 테마 퍼즐 풀기")}</button>}
       </div>
+      {studyOpen && <div style={{ width: "100%", maxWidth: 560, marginTop: 22, textAlign: "left", color: "#2A1B0E" }}><ThemePuzzles lessonId={lesson.id} /></div>}
     </div>
   );
   const boardBox = board ? (
@@ -673,9 +785,9 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
       {finished ? doneView : (
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           <div style={{ maxWidth: 1080, margin: "0 auto", minHeight: "100%", boxSizing: "border-box", display: "flex", flexDirection: narrow ? "column" : "row", gap: narrow ? 14 : 36, padding: narrow ? "4px 16px 16px" : "16px 24px 24px", alignItems: narrow ? "stretch" : "center" }}>
-            {narrow ? <>{coachPanel}{boardBox}{choicePanel}</> : <>
+            {narrow ? <>{dialoguePanel || coachPanel}{boardBox}{choicePanel}</> : <>
               {boardBox && <div style={{ flex: "0 1 600px", minWidth: 0 }}>{boardBox}</div>}
-              <div style={{ flex: "1 1 360px", maxWidth: boardBox ? 420 : 600, minWidth: 0, margin: boardBox ? 0 : "0 auto" }}>{coachPanel}{choicePanel}</div>
+              <div style={{ flex: "1 1 360px", maxWidth: boardBox ? 420 : 640, minWidth: 0, margin: boardBox ? 0 : "0 auto" }}>{dialoguePanel || coachPanel}{choicePanel}</div>
             </>}
           </div>
         </div>

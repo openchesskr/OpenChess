@@ -1,6 +1,6 @@
 // (v0.6.0, 다국어) 번역 엔진. 한국어 원문 문자열 자체를 키로 쓴다: t("친구 요청") → 현재 언어의 번역, 없으면 원문(한국어).
 //  · 언어는 페이지를 열 때 한 번 정해진다(설정 탭에서 바꾸면 저장 후 새로고침). 그래서 모듈 최상위의 const·배열에서 t()를 써도 된다.
-//  · 한국어가 아닌 언어의 번역 파일(src/lib/i18n/<code>.js)은 이 모듈이 최상위 await로 먼저 불러온다.
+//  · 한국어가 아닌 언어의 번역 파일(src/lib/i18n/<code>.js)은 이 모듈이 최상위 await로 먼저 불러온다(v0.7.9부터 첫 화면 몫만 — 아래 loadCatalog).
 //    이 모듈을 import하는 모듈은 번역이 로드될 때까지 실행을 기다리므로 App의 최상위 코드는 항상 번역이 준비된 뒤 돈다.
 //  · 자리표시자는 {0} {1} …. t("{0}님 차단됨", name). 번역 문장에서 자리표시자 순서는 바꿔도 된다(어순이 다른 언어를 위해).
 //  · 문장 속에 JSX 요소를 넣어야 하면 tx()를 쓴다: tx("{0}에게 답장", <b>{name}</b>).
@@ -53,18 +53,41 @@ function resolveLang() {
 export const lang = resolveLang();
 export const langInfo = LANGS.find((l) => l.code === lang) || LANGS[0];
 
+// (v0.7.9 성능, 번역 파일 분할) 번역은 두 조각으로 받는다 — core: 첫 화면에 필요한 문장(최상위 await로 화면 전에), rest: 지연 로딩 탭·창에서만
+// 쓰는 문장(그 화면을 처음 열기 직전에, afterFullCatalog). 나누기는 빌드 때 vite 플러그인(scripts/lib/i18nSplit.mjs)이 소스를 훑어 정한다.
+// 원본은 src/lib/i18n/<code>.js 하나 그대로다. 개발 서버·Node(검사 스크립트)에서는 core가 전체, rest는 빈 객체(또는 전체)다.
 async function loadCatalog(code) {
   switch (code) {
-    case "en": return (await import("./i18n/en.js")).default;
-    case "hi": return (await import("./i18n/hi.js")).default;
-    case "ja": return (await import("./i18n/ja.js")).default;
-    case "zh": return (await import("./i18n/zh.js")).default;
-    case "es": return (await import("./i18n/es.js")).default;
+    case "en": return (await import("./i18n/en.js?part=core")).default;
+    case "hi": return (await import("./i18n/hi.js?part=core")).default;
+    case "ja": return (await import("./i18n/ja.js?part=core")).default;
+    case "zh": return (await import("./i18n/zh.js?part=core")).default;
+    case "es": return (await import("./i18n/es.js?part=core")).default;
+    default: return {};
+  }
+}
+async function loadRestCatalog(code) {
+  switch (code) {
+    case "en": return (await import("./i18n/en.js?part=rest")).default;
+    case "hi": return (await import("./i18n/hi.js?part=rest")).default;
+    case "ja": return (await import("./i18n/ja.js?part=rest")).default;
+    case "zh": return (await import("./i18n/zh.js?part=rest")).default;
+    case "es": return (await import("./i18n/es.js?part=rest")).default;
     default: return {};
   }
 }
 let catalog = {};
 try { catalog = await loadCatalog(lang); } catch { catalog = {}; }
+
+let fullPromise = null;
+/** 나머지 번역(rest)까지 받아 합친다. 한 번만 요청하고, 실패하면(오프라인 등) 다음 호출 때 다시 시도한다 — 실패해도 거부하지 않는다(그 문장만 한국어로 나옴). */
+export function loadFullCatalog() {
+  if (lang === DEFAULT_LANG) return Promise.resolve();
+  return (fullPromise ||= loadRestCatalog(lang).then((rest) => { catalog = { ...catalog, ...rest }; }, () => { fullPromise = null; }));
+}
+/** 지연 로딩 화면 import를 감싼다: afterFullCatalog(() => import("./play.jsx")) — 나머지 번역을 받은 뒤 화면 파일을 실행한다(모듈 최상위 t() 포함).
+ *  빌드 때 번역 나누기(scripts/lib/i18nSplit.mjs)는 이 모양으로 감싼 import만 "나중 영역"의 시작점으로 센다. */
+export const afterFullCatalog = (load) => () => loadFullCatalog().then(load);
 
 if (typeof document !== "undefined") {
   document.documentElement.lang = lang;

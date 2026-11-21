@@ -20,6 +20,7 @@
 - **PR을 임의로 생성·머지하지 말 것(예외: 사용자가 "버전 종료"를 입력한 경우 — 위 "버전 종료 프로토콜").** 어떤 이유로든(작업이 끝났다고 판단되더라도, 이전에 "PR 만들자"는 지시가 있었더라도) 새로 PR을 열거나 머지하기 전에는 반드시 사용자에게 먼저 물어보고 명시적 승인을 받는다. 문서 수정·버전 라벨 정정처럼 사소해 보이는 변경도 예외 없음 — 커밋/푸시까지만 하고 PR 생성 여부는 승인 후 결정한다.
 - **PR 번호를 버전 번호에 맞춘다.** 이 프로젝트는 PR 번호와 배포 버전 번호를 의도적으로 맞춰 나간다. 예: v0.1.0(비교적 큰 단위 업데이트)은 PR #10에 맞출 예정. 새 PR을 만들기 전 다음 PR 번호가 계획한 버전과 맞는지 확인하고, 안 맞으면 사용자에게 확인받는다.
 - **"버전 기록"은 PR 생성 전에 자동으로 채워 넣는다.** 아래 "개발자 기록"(채팅 전용, 머지 후 1회)과는 별개로, README `## 버전 기록` 섹션과 `src/app/changelog.js`의 CHANGELOG 배열(접속 시 뜨는 공지 모달의 내용이자 APP_VERSION이 파생되는 곳. v0.6.0에서 App.jsx 분할로 이 파일로 옮김), 그리고 `src/AboutPage.jsx`의 `VERSION_HISTORY` 배열(`/about` 소개 페이지의 버전 기록 탭)까지 **세 곳 모두** 매 세션·매 버전마다 PR을 만들기 전에 그 버전 커밋에 포함해 둔다 — 사용자에게 물어보지 않고 항상 진행하며, 세 곳 중 하나라도 빠뜨린 채 넘어가지 않는다(과거 v0.1.2·v0.1.3이 `VERSION_HISTORY`에서만 누락된 채 배포된 적이 있었음 — 재발 방지). README 버전 기록은 기존 항목들과 같은 형식(`### OpenChess vX.Y.Z — 날짜` 헤더 + 보안/성능/기능/버그 수정/UI/UX/시스템 등 실제 해당하는 카테고리만 굵게, 개발자 관점의 상세 서술)으로 적고, CHANGELOG 배열에는 그 내용을 개발 용어 없이 사용자 입장에서 쉬운 말로 다시 정리해 새 항목을 배열 맨 앞에 추가한다. `AboutPage.jsx`의 `VERSION_HISTORY`에는 같은 내용을 CHANGELOG와 같은 쉬운 말로, 다만 카테고리(`feature`/`ui`/`ux`/`perf`/`fix`/`security`)로 나누고 `summary` 한 줄 요약·대표 기능 하이라이트(`highlight`)까지 갖춰(v0.5.9부터 마스코트 도입부/마무리 멘트 `mascot`은 쓰지 않는다) 배열 맨 앞에 추가한다(버전 번호는 세 곳이 항상 일치해야 함).
+- **첫 화면 번들에 탭·창을 다시 넣지 않는다(v0.7.9).** 분석 탭(기본 첫 화면)·공용 코드만 진입 파일(index)에 두고, 다른 탭·리뷰·마스터·채팅·친구 창은 `src/app/lazyScreens.jsx`의 `lazyScreen`으로 처음 열 때 받는다(첫 화면이 뜬 뒤 쉬는 시간에 미리 받음). App.jsx에서 탭 파일을 정적으로 import하지 말고, 여러 곳이 쓰는 상수·Context는 탭 파일 대신 가벼운 파일에 둔다(예: 미니게임 이름표 `playSpecialGames.jsx`, `legacyCtx.js`, 레슨 id `lessons/lessonIds.js`). 오프닝 스냅샷 SNAP은 `src/data/snapTree.js`(별도 청크). `check-bundle-split`(prebuild)이 구조를, `check-bundle-size`(postbuild)가 첫 화면 크기 예산을 지킨다. 번역도 같은 기준으로 첫 화면 몫(core)과 나머지(rest)로 빌드 때 자동으로 나뉜다(`scripts/lib/i18nSplit.mjs`) — 지연 화면 import는 반드시 `afterFullCatalog(() => import("…"))`로 감싸야 그 화면 번역을 먼저 받는다(`check-i18n-split`).
 - **새 화면 문구는 `t()`로 감싼다(v0.6.0).** 한국어 원문이 키. 용어는 `src/lib/i18n/glossary.js` 표기를 쓰고, 번역 5개 언어를 `src/lib/i18n/*.js`에 추가한다. `npm run check:i18n`(prebuild)이 누락·용어 위반을 막는다. `t()` 결과를 비교·분기 값으로 쓰지 않는다.
 - **매 버전(모든 세션)마다 "개발자 기록"을 남긴다.** 이건 사용자가 머지 후에 체크해야 할 할 일(TODO) 목록이 아니라, 그 버전에서 실제로 무엇을 개발했고 무엇이 어떻게 적용됐는지에 대한 기술적 기록이다 — 원인 분석, 선택한 해결 방식, 실제로 바뀐 동작 위주로 서술한다. PR 본문이나 README 버전 기록에 적지 않고, 채팅으로 사용자에게 텍스트로 직접 작성해 보여준다. 문장은 사용자가 개발 중 쓰는 말투를 살려 "~할 것" 형식의 간결한 항목체로 적는다.
   - **시점**: 세션 중 커밋할 때마다 바로바로 남기지 않는다. "버전 종료" 프로토콜에서 PR을 머지한 직후, 그 PR(버전)에 실제로 들어간 변경사항 전체를 한 번에 모아 요약해서 남긴다 — 같은 세션에서 여러 번 커밋했어도 기록은 머지 후 한 번만.
@@ -85,6 +86,41 @@
 5. 0.9.0: 앱 틀(Capacitor 등), 푸시 알림, 진동, 뒤로가기 버튼 연결
 
 ## 버전 기록
+
+### OpenChess v0.7.9 - 2026/11/21
+
+테마: 성능(첫 화면 번들·번역 분할), 학습 탭 전면 보강(두 코치 대화·질문 전 설명·지난 레슨 복습·연계·새 단계 "계산과 조합"·모든 레슨 고유 테마 퍼즐), 분석 탭 집중 분석 커뮤니티·댓글·전체 통계 재설계, 플레이·소셜·도감 다듬기. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`explorer_game_pgns` 표·`explorer_pgn_read/save`, 소셜 게시물 생성자·날짜 백필, `seedChapters` 새 레슨 5개).
+
+**성능**
+- 첫 화면 번들 분할(`src/app/lazyScreens.jsx`): 분석 탭 밖의 탭·리뷰·마스터·채팅·친구·설정 창을 처음 열 때 받고, 첫 화면 뒤 쉬는 시간에 미리 받는다. 미니게임 이름표(`playSpecialGames.jsx`)·유산 Context(`legacyCtx.js`)·레슨 id(`lessons/lessonIds.js`)를 가벼운 파일로 분리, 오프닝 스냅샷 SNAP은 `src/data/snapTree.js`(data-snap 청크), 퍼포먼스 레이팅 계산은 동적 import. 첫 화면 스크립트 gzip 996KB → 618KB, index 3,160KB → 1,293KB.
+- 번역 파일 분할(`scripts/lib/i18nSplit.mjs`): 빌드 때 지연 화면에서만 쓰는 문장을 rest로 떼어 `afterFullCatalog`로 그 화면을 열기 직전에 받는다. 영어 첫 화면 번역 750KB → 342KB 등 5개 언어 모두 절반 이하.
+
+**보안**
+- BUG-197(P1, 배포 전): 웹 검색 미리보기 서버가 주소 이름만 검사해 SSRF 가능 — `isPrivateIp` + `node:https`·`safeLookup`(DNS 응답 전부 검사, 검사한 IP로만 연결, 리디렉트마다 재검사).
+
+**기능**
+- 학습 탭 두 코치 대화(`app/lessons.jsx` `DialogueBubble`·`speakerOf`·`moodOf`): 보드 없는 설명은 말풍선을 아래로 쌓아 MILKU(왼쪽)·KOKOA(오른쪽)가 번갈아 말하고, 문장에 따라 표정(생각·놀람·기쁨)을 바꾼다.
+- 가르친 뒤 묻기(`lessons/curriculumTalk.js` `TEACH`): 객관식 질문 바로 앞에 그 개념을 설명하는 대화를 넣었다(75개 레슨). `check-lessons`가 설명 없이 묻는 질문을 막는다.
+- 레슨 연계: 모든 레슨이 지난 레슨 요약(제목·한 줄 요약) → 이어지는 설명(`LINK`, 137개 레슨) → 지난 레슨 복습 문제로 시작한다. 단계가 바뀌면 새 단계 소개. 대화 원본은 `scripts/lessonTalk/*.json`(대사 + 5개 언어), `scripts/build-lesson-talk.mjs`가 `curriculumTalkData.js`와 번역을 만든다.
+- 새 단계 "계산과 조합"(`lessons/curriculumCalc.js`, 우수한 수 + 파셋 조준경 배지): 2수 메이트·조용한 수·3수 메이트·내주고 메이트·메이트 위협 막기. 포지션은 마스터 대국 메이트 수순에서 첫 수가 유일한 것만. 12단계·138레슨.
+- 레슨 분량: 복습 문제를 같은 포지션 반복 대신 대칭 변형(좌우 반전·색 바꿈, `lessons/variants.js`)으로 최소 3문제, 본문 중복 포지션도 변형으로 교체, 연습 문제 보충(`curriculumPractice.js`). 모든 레슨 본문 예상 1분 이상(`lessons/duration.js`, `check-lessons`).
+- 추가 학습 퍼즐 은행(`scripts/build-lesson-puzzles.mjs` → `src/data/lessonPuzzleBank.json`, 767개): 모든 레슨의 고유 퍼즐 — 레슨 문제의 대칭 변형 + 메이트 패턴 레슨은 실제 마스터 대국의 같은 메이트, 오프닝은 주요 수순 문제. Lichess에 맞는 테마가 없는 레슨은 "OpenChess 고유 테마". 레슨 완료 화면에서 바로 풀기.
+- 분석 탭 집중 분석: 커뮤니티 블록을 댓글 위로, 구글 검색 결과식 미리보기(og:image·아이콘·사이트·게시일), 결과 6→10개. 댓글 블록 유튜브 댓글창 레이아웃. 전체 통계는 설명·쌓인 판수 삭제, 추천/최근 대국 섹션, 레이팅 숨김, 대국 행을 마스터·내 통계와 같게, Lichess 연결 대신 서버가 PGN을 검증해 `explorer_game_pgns`에 저장(`api/lichess.js?gpgn=1`).
+- 소셜 로그인: Supabase에 켜진 제공자만 버튼 표시(`src/lib/authProviders.js`, BUG-193), `SETUP_OAUTH.md` Apple Secret Key 6개월 만료·Facebook 절차 정정(BUG-194).
+
+**UI**
+- 파셋 기물 아이콘 6종 + 8×8 보드 아이콘(`components/pieceIcons.jsx`)으로 모든 레슨 아이콘을 기물 + 개념 배지 조합으로 재디자인, 도감 업적의 기물 엠블럼(카로칸·킹스 갬빗 등)·체크메이트·프로모션·나이트의 해 아이콘도 교체.
+- 도감 마스터·대회 상세 카드 재디자인(`components/dexCardKit.jsx`): 어두운 머리띠(종류별 엠블럼·이름·요약 칩), 핵심 수치 타일, 섹션·연도 알약 타임라인. 마스터 프로필(마스터 페이지 포함)도 같은 체계.
+- 플레이 탭: 미니게임 대전·로비·일반 대국 설정·인게임 데스크톱 2단, 에보니+금색 주 버튼, 매칭 카드, 허브 가운데 육각형 나이트 로고만.
+- 소셜 탭: 게시물 보드 폭 0.6 → 0.8, 퍼즐 테마별 효과 대신 종류별 배경(퍼즐·유산 별자리와 코너 브래킷·대국 펠트), 생성자 없으면 openchesskr·날짜 없으면 오늘.
+- 학습 탭 용어를 원문 발음으로(질식 메이트 → 스모더드 메이트 등 240여 문장, 인터피어런스·오퍼지션 통일).
+
+**버그 수정**
+- BUG-191(refresh-data SNAP 위치), BUG-193·194, BUG-195·196(배포 전), BUG-197(P1), BUG-198(도감 모식도 25% 배율 이동 시 깨짐 — 조작 중에만 will-change, `lib/layerHint.js`), BUG-199(추가 학습 스모더드 메이트 미표시 — 퍼즐 은행, 빈 응답 캐시 안 함, 다른 테마 Lichess 퍼즐 거름).
+
+**시스템**
+- prebuild 검사 추가·갱신: `check-bundle-split`, `check-bundle-size`(postbuild), `check-i18n-split`, `check-oauth-providers`, `check-web-search`, `check-lessons`(질문 전 설명·연계·복습·1분·12단계), `check-theme-puzzles`(퍼즐 은행), `check-masters-pan-perf`(BUG-198).
+- `package.json` 0.7.9, 새 문구 5개 언어 번역.
 
 ### OpenChess v0.7.8 - 2026/11/16
 

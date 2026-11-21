@@ -21,7 +21,8 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, isConstrainedDevice, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleNameText, seriesLabelText, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
-import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
+import { useOAuthProviders } from "../lib/authProviders.js";
 
 import { t, tx } from "../lib/i18n.js";
 import { lichessForegroundBusy, whenLichessIdle } from "../lib/lichessApi.js";
@@ -1910,6 +1911,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
   // (v0.4.3 기능) 구글 전용이던 힌트를 일반화 — 이 이메일이 실제로 가입된 다른 OAuth 제공자 이름을
   // 그대로 담는다("google"|"apple"|"facebook"|null).
   const [hintProvider, setHintProvider] = useState(null);
+  const oauthShown = useOAuthProviders();   // (v0.7.9, BUG-193) Supabase에 켜진 소셜 로그인만 버튼으로
   const submit = async () => {
     setErr(""); setHintProvider(null);
     if (mode === "reset") {
@@ -2032,9 +2034,9 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 10px" }}><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /><span style={{ fontSize: 11, color: T.inkSoft }}>{t("또는")}</span><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /></div>
             {/* (v0.4.3 기능, 사용자 요청) Apple/Facebook 로그인 추가 — Google과 완전히 같은 방식(GoTrue
                 authorize 리다이렉트, provider 이름만 다름)이라 authOAuthStart(provider) 하나로 통일했다. */}
-            <button onClick={() => authOAuthStart("google")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Google로 계속하기", <GoogleG />)}</button>
-            <button onClick={() => authOAuthStart("apple")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#000", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Apple로 계속하기", <AppleLogo />)}</button>
-            <button onClick={() => authOAuthStart("facebook")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#1877F2", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Facebook으로 계속하기", <FacebookLogo />)}</button>
+            {oauthShown.includes("google") && <button onClick={() => authOAuthStart("google")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Google로 계속하기", <GoogleG />)}</button>}
+            {oauthShown.includes("apple") && <button onClick={() => authOAuthStart("apple")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#000", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Apple로 계속하기", <AppleLogo />)}</button>}
+            {oauthShown.includes("facebook") && <button onClick={() => authOAuthStart("facebook")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#1877F2", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Facebook으로 계속하기", <FacebookLogo />)}</button>}
             {mode === "login" && <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => { setMode("reset"); setErr(""); setSent(false); setPw(""); }} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{t("비밀번호 찾기")}</button></div>}
             <div style={{ textAlign: "center", fontSize: 12.5, color: T.inkSoft }}>
               {mode === "login" ? t("계정이 없나요? ") : t("이미 계정이 있나요? ")}

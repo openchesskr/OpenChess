@@ -43,12 +43,12 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
 { const { readFileSync: rf } = await import("node:fs"); const sf = rf(new URL("../src/app/socialFeed.jsx", import.meta.url), "utf8");
   ok((sf.match(/head=\{<PostHead /g) || []).length === 2, "퍼즐·유산 게시물이 같은 머리(PostHead)를 쓰지 않음");
   ok(/const photo = usePhotoOf\(creator\)/.test(sf) && /<PostHead username=\{creator\} photo=\{photo\}/.test(sf), "퍼즐 게시물에 작성자 프로필 사진이 없음");
-  ok(/const name = ownerInfo\.username \|\| ""/.test(sf) && !/ownerInfo\.nickname/.test(sf), "유산 게시물이 아이디 대신 닉네임을 씀");
+  ok(/const name = ownerInfo\.username \|\| DEFAULT_CREATOR/.test(sf) && !/ownerInfo\.nickname/.test(sf), "유산 게시물이 아이디 대신 닉네임을 씀");
   ok((sf.match(/<Caption name=/g) || []).length === 2, "퍼즐·유산 캡션 형식이 다름");
   ok(/<LegacyFrame \/>/.test(sf), "유산 미리보기의 남색 바탕·금색 액자가 사라짐(사용자 요청으로 유지)"); }
 // (v0.7.8, 사용자 요청) 소셜 탭 개편 — 연속 출석 "n일", 검색창(번호로 풀기 통합)·필터를 머리줄로, 데스크톱 절반 분할, 게시물 날짜·키워드 박스, 퍼즐 테마별 배경, 티어 육각형
 { const fsR = rd;
-  const pz = fsR("src/app/puzzle.jsx"), feed = fsR("src/app/socialFeed.jsx"), pc = fsR("src/app/postComposer.jsx"), bd = fsR("src/components/puzzleThemeBackdrop.jsx");
+  const pz = fsR("src/app/puzzle.jsx"), feed = fsR("src/app/socialFeed.jsx"), pc = fsR("src/app/postComposer.jsx"), bd = fsR("src/components/postBackdrops.jsx");
   ok(/\{t\("\{0\}일", n\)\}/.test(pc), "연속 출석 숫자 뒤에 \"일\"이 없음");
   const hdr = (pz.match(/const headerNode = \([\s\S]*?\n  \);/) || [""])[0];
   ok(/<StreakCount [^\n]*\n\s*<NewPostButton [\s\S]*\{searchBarNode\}/.test(hdr), "1줄 연속 출석(왼쪽)·새 게시물(오른쪽), 2줄 검색창·필터 배치가 아님");
@@ -56,10 +56,13 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   ok(/placeholder=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz) && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
   ok(/const numInput = useMemo\(\(\) => \{ const q = searchQuery\.trim\(\)/.test(pz) && /if \(e\.key === "Enter" && numInput\) solveByInput\(\)/.test(pz), "검색어가 번호·날짜면 번호로 풀기로 동작해야 함");
   ok(/gridTemplateColumns: "minmax\(0, 1fr\) minmax\(0, 1fr\)"[^}]*width: "calc\(100vw - 32px\)"/.test(pz), "데스크톱 소셜 탭이 뷰포트 절반으로 나뉘지 않음");
-  ok(/date=\{fmtDate\(createdAt\)\} keywords=\{keywords\}/.test(feed) && /date=\{fmtDate\(post\.savedAt\)\}/.test(feed) && /<KwBox key=/.test(feed), "게시물 좌하단 날짜 + 키워드 박스가 없음");
+  ok(/date=\{createdAt === undefined \? "" : dateOrToday\(createdAt\)\} keywords=\{keywords\}/.test(feed) && /date=\{dateOrToday\(post\.savedAt\)\}/.test(feed) && /<KwBox key=/.test(feed), "게시물 좌하단 날짜(없으면 오늘, v0.7.9) + 키워드 박스가 없음");
   ok(!/>#\{labels\[k\] \|\| k\}</.test(feed), "퍼즐 테마를 # 대신 박스로 표기해야 함");
-  ok(/const POST_BOARD_FRAC = 0\.6;/.test(feed) && /aspectRatio: PUZZLE_MEDIA_RATIO/.test(feed), "게시물 보드 축소·세로로 긴 미디어 칸이 없음");
-  ok(/<PuzzleThemeBackdrop theme=\{bdTheme\} \/>/.test(feed) && ["CheckmateArt", "SacrificeArt", "AdvantageArt", "PunishArt"].every((f) => bd.includes("function " + f + "(")), "퍼즐 테마별 배경 그림이 없음");
+  ok(/const POST_BOARD_FRAC = 0\.8;/.test(feed) && /aspectRatio: PUZZLE_MEDIA_RATIO/.test(feed), "게시물 보드 크기(v0.7.9 사용자 요청: 0.6 → 0.8, 면적 약 1.75배)·세로로 긴 미디어 칸이 없음");
+  // (v0.7.9, 사용자 요청) 퍼즐 테마별 효과 제거 — 배경·효과는 게시물 종류(퍼즐·유산·대국)별로 하나씩
+  ok(!/PuzzleThemeBackdrop|puzzleBackdropTheme/.test(feed) && /<PuzzlePostBackdrop \/>/.test(feed) && /isGame \? <GamePostBackdrop \/> : <LegacyPostBackdrop /.test(feed)
+    && ["PuzzlePostBackdrop", "LegacyPostBackdrop", "GamePostBackdrop"].every((f) => bd.includes("export function " + f + "(")) && /CONSTELLATIONS/.test(bd) && /function Bracket\(/.test(bd), "게시물 배경이 퍼즐·유산(별자리·브래킷)·대국별로 나뉘지 않음");
+  ok(/creator = creator \|\| DEFAULT_CREATOR;/.test(feed) && /ownerInfo\.username \|\| DEFAULT_CREATOR/.test(feed) && /export const DEFAULT_CREATOR = "openchesskr";/.test(feed), "생성자 정보가 없는 게시물은 openchesskr로 보여야 함(v0.7.9)");
   ok(/<TierOctFrame tierKey=\{tier\.key\}/.test(pz) && /const octClip = /.test(pz) && /<TierBackdrop tierKey=\{tierKey\} on narrow=\{false\} compact \/>/.test(pz), "퍼즐 티어 박스가 팔각형 + 티어 여정 디자인(TierOctFrame·TierBackdrop)이 아님"); }
 // (v0.7.8, 사용자 요청 2차) 게시물 ⋮ 메뉴(남: 신고·관심 없음 / 나: 삭제), 재생·풀기 버튼 제거, 오른쪽 영역(모바일 2페이지)·리더보드·친구 퍼즐 현황
 { const feed = rd("src/app/socialFeed.jsx"), pz = rd("src/app/puzzle.jsx"), side = rd("src/app/puzzleSide.jsx"), sql = rd("supabase-setup.sql");

@@ -3937,6 +3937,23 @@ end; $$;
 update public.puzzles set creator_username = null
  where creator_uid is null and creator_username is not null and creator_username <> ''
    and not exists (select 1 from public.profiles pr where pr.username = puzzles.creator_username);
+-- (v0.7.9, 사용자 요청) 생성자 정보가 없는 게시물의 생성자는 openchesskr로 — 작성자가 비었거나(탈퇴·자동 생성) 아이디가 빈 퍼즐을 개발자 계정으로 넘긴다.
+--  개발자 계정 프로필이 있을 때만(작성자 uid까지 채워 위의 정리 문장이 다시 비우지 않게). 몇 번 실행해도 결과가 같다.
+update public.puzzles pz set creator_uid = oc.id, creator_username = 'openchesskr'
+  from public.profiles oc
+ where oc.username = 'openchesskr' and pz.creator_uid is null and coalesce(pz.creator_username, '') = '';
+-- (v0.7.9, 사용자 요청) 날짜 정보가 없는 게시물(저장 시각 savedAt이 없는 옛 유산)의 날짜는 이 SQL을 실행한 날로 — 한 번 채우면 고정된다.
+--  앱도 불러올 때 같은 규칙으로 찍어 다시 공개한다(src/lib/legacyPosts.js stampMissingSavedAt). 퍼즐은 created_at이 not null default now()라 비지 않는다.
+update public.profiles pr
+   set pub = jsonb_set(pr.pub, '{legacies}', (
+     select jsonb_object_agg(e.key, case
+       when jsonb_typeof(e.value) = 'object' and coalesce(e.value ->> 'savedAt', '') !~ '^[1-9][0-9]{9,13}$'
+         then e.value || jsonb_build_object('savedAt', (extract(epoch from now()) * 1000)::bigint)
+       else e.value end)
+     from jsonb_each(pr.pub -> 'legacies') e))
+ where jsonb_typeof(pr.pub -> 'legacies') = 'object'
+   and exists (select 1 from jsonb_each(pr.pub -> 'legacies') e
+                where jsonb_typeof(e.value) = 'object' and coalesce(e.value ->> 'savedAt', '') !~ '^[1-9][0-9]{9,13}$');
 
 -- ============================================================================
 -- N+5) MID — (v0.5.7 BUG-029) 16-1) profiles_search_by_mid_prefix가 mid 컬럼을 쓰므로 그 앞(16-0)으로 옮겼다.
@@ -4451,7 +4468,7 @@ returns jsonb language sql immutable as $$
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
-    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20, "r_promotion": 20, "r_draws": 20, "r_notation": 20, "o_tempo": 20, "g_protect": 20, "g_candidate": 20, "g_threat": 20, "g_trade": 20, "g_activity": 20, "g_rooks": 20, "i_twice": 20, "i_earlyqueen": 20, "i_kingpawns": 20, "i_passive": 20, "x_ignore": 20, "x_scholar": 20, "x_f7": 20, "x_greedy": 20, "x_recapture": 20, "z_foolsmate": 20, "z_queenhang": 20, "z_forksq": 20, "z_stalemate": 20, "z_holes": 20, "n_free": 20, "n_mate1": 20, "n_checks": 20, "n_punish": 20, "n_promo": 20, "t_decoy": 20, "t_deflection": 20, "t_overload": 20, "t_intermezzo": 20, "t_xray": 20, "t_interference": 20, "st_space": 20, "st_goodtrade": 20, "st_prophylaxis": 20, "st_kingattack": 20, "e_lucena": 20, "e_philidor": 20, "e_perpetual": 20, "b_greek": 20, "b_legal": 20, "b_queensac": 20, "b_exchsac": 20},
+    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20, "r_promotion": 20, "r_draws": 20, "r_notation": 20, "o_tempo": 20, "g_protect": 20, "g_candidate": 20, "g_threat": 20, "g_trade": 20, "g_activity": 20, "g_rooks": 20, "i_twice": 20, "i_earlyqueen": 20, "i_kingpawns": 20, "i_passive": 20, "x_ignore": 20, "x_scholar": 20, "x_f7": 20, "x_greedy": 20, "x_recapture": 20, "z_foolsmate": 20, "z_queenhang": 20, "z_forksq": 20, "z_stalemate": 20, "z_holes": 20, "n_free": 20, "n_mate1": 20, "n_checks": 20, "n_punish": 20, "n_promo": 20, "t_decoy": 20, "t_deflection": 20, "t_overload": 20, "t_intermezzo": 20, "t_xray": 20, "t_interference": 20, "st_space": 20, "st_goodtrade": 20, "st_prophylaxis": 20, "st_kingattack": 20, "e_lucena": 20, "e_philidor": 20, "e_perpetual": 20, "b_greek": 20, "b_legal": 20, "b_queensac": 20, "b_exchsac": 20, "c_mate2": 20, "c_quiet": 20, "c_mate3": 20, "c_sac": 20, "c_defense": 20},
     "playQuests": {"game": {"chapter": 1, "metric": "game", "target": 1, "coins": 50}, "win": {"chapter": 1, "metric": "win", "target": 1, "coins": 50}, "long": {"chapter": 1, "metric": "long", "target": 1, "coins": 50}, "mg": {"chapter": 1, "metric": "mg", "target": 2, "coins": 50}, "kinds": {"chapter": 1, "metric": "kinds", "target": 2, "coins": 50}, "ctwogame": {"chapter": 2, "metric": "game", "target": 5, "coins": 80}, "ctwowin": {"chapter": 2, "metric": "win", "target": 3, "coins": 80}, "ctwolong": {"chapter": 2, "metric": "long", "target": 3, "coins": 80}, "ctwomg": {"chapter": 2, "metric": "mg", "target": 5, "coins": 80}, "ctwokinds": {"chapter": 2, "metric": "kinds", "target": 4, "coins": 80}, "cthreegame": {"chapter": 3, "metric": "game", "target": 20, "coins": 120}, "cthreewin": {"chapter": 3, "metric": "win", "target": 10, "coins": 120}, "cthreelong": {"chapter": 3, "metric": "long", "target": 8, "coins": 120}, "cthreemg": {"chapter": 3, "metric": "mg", "target": 15, "coins": 120}, "cthreemgwin": {"chapter": 3, "metric": "mgwin", "target": 5, "coins": 120}},
     "devBonusCoins": 10000
   }'::jsonb;
@@ -5024,6 +5041,39 @@ revoke all on function public.explorer_record(text, bigint, bigint, bigint, json
 revoke all on function public.explorer_read(text, int, int) from public, anon, authenticated;
 grant execute on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) to service_role;
 grant execute on function public.explorer_read(text, int, int) to service_role;
+
+-- (v0.7.9, 사용자 요청) 전체 통계 대국을 Lichess로 보내지 않고 OpenChess 안에서 보기·리뷰 — 대국 기보를 PGN으로 저장한다.
+--  · 쓰기·읽기는 서버리스 함수(api/lichess.js ?gpgn=1, service_role)만. 서버가 lichess.org에서 받은 PGN을 chess.js로 다시 둬 보고 정리해 넣는다.
+--  · explorer_games에 쌓인 대국(id)만 받는다 — 임의 대국 id로 Lichess 기보를 중계·저장할 수 없다.
+create table if not exists public.explorer_game_pgns (
+  game_id text primary key check (game_id ~ '^[A-Za-z0-9]{8}$'),
+  pgn text not null check (length(pgn) between 10 and 30000),
+  fetched_at timestamptz not null default now()
+);
+create index if not exists idx_explorer_games_game on public.explorer_games (game_id);
+alter table public.explorer_game_pgns enable row level security;
+revoke all on public.explorer_game_pgns from public, anon, authenticated;
+create or replace function public.explorer_pgn_read(p_game text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'known', exists (select 1 from public.explorer_games where game_id = p_game),
+    'pgn', (select pgn from public.explorer_game_pgns where game_id = p_game)
+  );
+$$;
+create or replace function public.explorer_pgn_save(p_game text, p_pgn text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if p_game is null or p_game !~ '^[A-Za-z0-9]{8}$' then raise exception 'invalid game'; end if;
+  if p_pgn is null or length(p_pgn) < 10 or length(p_pgn) > 30000 then raise exception 'invalid pgn'; end if;
+  if not exists (select 1 from public.explorer_games where game_id = p_game) then return false; end if;
+  insert into public.explorer_game_pgns(game_id, pgn) values (p_game, p_pgn)
+  on conflict (game_id) do update set pgn = excluded.pgn, fetched_at = now();
+  return true;
+end; $$;
+revoke all on function public.explorer_pgn_read(text) from public, anon, authenticated;
+revoke all on function public.explorer_pgn_save(text, text) from public, anon, authenticated;
+grant execute on function public.explorer_pgn_read(text) to service_role;
+grant execute on function public.explorer_pgn_save(text, text) to service_role;
 
 -- ============================================================================
 -- (v0.7.8, 사용자 요청) 학습 탭 "추가 학습" — 최근에 본 레슨의 테마(포크·핀·백랭크 메이트 …)에 맞는 Lichess 테마 퍼즐을 서버가 받을 때마다 쌓는다.

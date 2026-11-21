@@ -18,9 +18,10 @@ import { LegacyRevealScreen, legacyLikeCounts, legacyLikedSlots, legacyLikeToggl
 import { LegacyShareSheet } from "./social.jsx";
 import { listPosts, isSaved, normalizeSaved, kindOfPost, legacyPath } from "../lib/legacyPosts.js";
 import { LegacyFrame, LEGACY_GOLD, LEGACY_GOLD_HI } from "../components/legacyFrame.jsx";
+import { LegacyActionsCtx } from "./legacyCtx.js";
 
-/* App이 내려 주는 동작: { saved: 리포스트한 남의 게시물 목록, toggleSave({owner, ownerName, id, entry}), removeMine(id) } — 없으면 해당 버튼을 숨긴다. */
-export const LegacyActionsCtx = createContext(null);
+/* App이 내려 주는 동작 Context는 legacyCtx.js(v0.7.9, 첫 화면 번들 분할) — 기존 import 경로를 위해 다시 내보낸다. */
+export { LegacyActionsCtx };
 const GOLD = LEGACY_GOLD, GOLD_HI = LEGACY_GOLD_HI;
 
 const actBtn = (on, danger) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 9px", borderRadius: 999, border: "1px solid " + (danger ? "rgba(255,138,122,.5)" : "rgba(212,175,95,.35)"), background: on ? "rgba(212,175,95,.18)" : "rgba(255,255,255,.04)", color: danger ? "#FF8A7A" : on ? GOLD_HI : "#D9CBA8", cursor: "pointer", fontSize: 12, fontWeight: 800, lineHeight: 1 });

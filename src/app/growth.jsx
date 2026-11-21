@@ -13,8 +13,7 @@ import { OnlineDot, Board, useNarrow, fmtFull, REVIEW_DEPTH, ENGINE_PROFILES, is
 import { QUICK_REVIEW_ENGINE } from "../lib/prefs.js";
 import { loadCachedReviewDepth } from "./reviewCache.js";
 import { explainMistake } from "../lib/mistakeWhy.js";
-import { GROWTH_RECENT_GAMES, recordOf } from "../lib/recentGames.js";
-import { recentPerformance, RECENT_PERF_MIN_GAMES } from "../lib/recentPerformance.js";
+import { GROWTH_RECENT_GAMES, RECENT_PERF_MIN_GAMES, recordOf } from "../lib/recentGames.js";   // (v0.7.9) 퍼포먼스 계산 모듈(recentPerformance.js)은 useRecentPerformanceModule이 따로 받는다
 import { ensureReview, cachedReviewOf, reviewKeyOf } from "./autoReview.js";
 import { analyzeGame, buildGrowth, classifyPending, loadCauseCache, saveCauseCache, betterMoves, phaseLabel, causeLabel, causeAdvice, causeWhat, causeWhy, causeFix, splitSteps, pieceLabel, actionLabel, PHASES, MIN_PHASE_GAMES, MIN_TYPE_MOVES } from "../lib/growthAnalysis.js";
 import { boardFromSans, moveNumber } from "../lib/chessRules.js";
@@ -417,6 +416,17 @@ function MoveCard({ m, onReview, noBoard }) {
   );
 }
 
+// (v0.7.9 성능, 번들 분할) 퍼포먼스 레이팅 계산(퍼포먼스 곡선·오프닝 강도 표, 약 150KB)은 첫 화면 번들에서 빼고 성장 분석이 화면에 붙은 뒤 받는다.
+// 값은 자동 리뷰(엔진, 수 초)가 끝나야 나오므로 그보다 먼저 도착한다. 실패하면(오프라인 등) 값 없이 "–" 안내만 남는다.
+function useRecentPerformanceModule() {
+  const [mod, setMod] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    import("../lib/recentPerformance.js").then((m) => { if (alive) setMod(m); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return mod;
+}
 /* (v0.7.6, 사용자 요청) 퍼포먼스 레이팅 — /user 프로필(최근 10판)에서 옮겨 와, 성장 분석이 자동 리뷰한 최근 5판의 수를 합산한다(src/lib/recentPerformance.js).
    한 판의 값은 오차가 커서 보여 주지 않는다. 합산할 판이 RECENT_PERF_MIN_GAMES보다 적으면(짧은 대국·분석 실패) "–"와 안내만. */
 function PerfHero({ perf, games }) {
@@ -870,14 +880,15 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
   const replay = useShowcaseReplay(showResults && showcase === "run", recent.slice(0, need), cachedReviewOf);
   const g = useGrowthData(showResults ? auto.records : []);
   // (v0.7.6) 퍼포먼스 레이팅: 자동 리뷰가 끝난 최근 5판(기록)을 원래 대국 객체(진영·시간 규정·레이팅)와 짝지어 합산한다.
+  const perfMod = useRecentPerformanceModule();
   const perf = useMemo(() => {
-    if (!showResults) return null;
+    if (!showResults || !perfMod) return null;
     const byKey = new Map(recent.map((game) => [reviewKeyOf(game), game]));
     // (v0.7.7 BUG-095) 퍼포먼스 곡선은 깊이 20(REVIEW_DEPTH) 분석으로 맞췄다 — "더 빠르게" 설정의 얕은 분석 결과까지 섞으면 값이 어긋나므로 그 깊이 이상만 합산한다.
     const items = auto.records.filter((r) => (loadCachedReviewDepth(r.key) ?? 0) >= REVIEW_DEPTH)
       .map((r) => ({ game: byKey.get(r.key), moves: r.result && r.result.moves })).filter((x) => x.game && Array.isArray(x.moves));
-    return { value: recentPerformance(items, GROWTH_RECENT_GAMES), games: items.length };
-  }, [showResults, auto.records]);   // eslint-disable-line react-hooks/exhaustive-deps
+    return { value: perfMod.recentPerformance(items, GROWTH_RECENT_GAMES), games: items.length };
+  }, [showResults, auto.records, perfMod]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <section aria-label={t("성장 분석")} style={{ marginBottom: 8 }}>
       <GrowthFxStyle />

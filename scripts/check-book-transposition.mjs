@@ -29,11 +29,8 @@ const body = (name) => {
   }
   return "";
 };
-// 스냅샷 트리(SNAP) — `const SNAP = /*__DATA__*/ {…};`
-const snapAt = app.indexOf("const SNAP = /*__DATA__*/ ") + "const SNAP = /*__DATA__*/ ".length;
-let d = 0, e = snapAt;
-for (; e < app.length; e++) { if (app[e] === "{") d++; else if (app[e] === "}" && --d === 0) break; }
-const SNAP = JSON.parse(app.slice(snapAt, e + 1));
+// 스냅샷 트리(SNAP) — (v0.7.9) src/data/snapTree.js로 분리(별도 청크). 순수 데이터 모듈이라 그대로 import한다.
+const { SNAP } = await import("../src/data/snapTree.js");
 
 const names = ["forceKindFor", "addsFor", "isUnbooked", "isBookMoveAtPath", "bookPosAfter", "invalidateBookIndex", "bookPosIndex", "isBookMoveAt"];
 const src = `

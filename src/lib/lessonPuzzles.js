@@ -36,6 +36,8 @@ const BY_LESSON = {
   t_double: T(["fork"], ["advantage"]), t_removal: T(["capturingDefender"], ["advantage"]), t_doublecheck: T(["doubleCheck"], ["mate"]), t_decoy: T(["attraction"], ["sacrifice"]),
   t_deflection: T(["deflection"], ["sacrifice"]), t_overload: T(["deflection", "capturingDefender"], ["advantage"]), t_intermezzo: T(["intermezzo"], ["advantage"]),
   t_xray: T(["xRayAttack"], ["advantage"]), t_interference: T(["interference"], ["sacrifice"]),
+  // (v0.7.9) 계산과 조합
+  c_mate2: T(["mateIn2"], ["mate"]), c_quiet: T(["quietMove", "mateIn2"], ["mate"]), c_mate3: T(["mateIn3"], ["mate"]), c_sac: T(["sacrifice", "mateIn2"], ["sacrifice", "mate"]), c_defense: T(["defensiveMove"], ["punish"]),
   // 전략과 계획
   st_openfile: T(["rookEndgame", "middlegame"], []), st_seventh: T(["rookEndgame"], []), st_outpost: T(["middlegame"], ["advantage"]), st_passed: T(["advancedPawn"], []),
   st_space: T(["middlegame", "quietMove"], ["advantage"]), st_goodtrade: T(["advantage"], ["advantage"]), st_prophylaxis: T(["quietMove", "defensiveMove"], []), st_kingattack: T(["kingsideAttack"], ["mate", "sacrifice"]),
@@ -52,7 +54,7 @@ const BY_LESSON = {
 };
 const STAGE_THEME = {
   s_rules: T(["mateIn1"], ["mate"]), s_good: T(["hangingPiece"], ["advantage"]), s_inacc: T(["middlegame"], ["punish"]), s_mistake: T(["hangingPiece"], ["punish"]),
-  s_blunder: T(["hangingPiece"], ["punish"]), s_miss: T(["advantage"], ["punish"]), s_tactic: T(["fork"], ["advantage"]), s_plan: T(["advantage"], ["advantage"]),
+  s_blunder: T(["hangingPiece"], ["punish"]), s_miss: T(["advantage"], ["punish"]), s_tactic: T(["fork"], ["advantage"]), s_calc: T(["mateIn2"], ["mate"]), s_plan: T(["advantage"], ["advantage"]),
   s_endgame: T(["endgame"], []), s_brill: T(["sacrifice"], ["sacrifice"]), s_rep: T(["opening"], []),
 };
 export const LESSON_THEME_IDS = Object.keys(BY_LESSON);
@@ -66,15 +68,15 @@ export function lessonTheme(lesson) {
 
 /* ── 테마 이름(화면) ── */
 const ANGLE_LABEL = {
-  fork: () => t("포크"), pin: () => t("핀"), skewer: () => t("스큐어"), discoveredAttack: () => t("디스커버드 공격"), doubleCheck: () => t("더블 체크"), hangingPiece: () => t("공짜 기물"),
-  trappedPiece: () => t("갇힌 기물"), capturingDefender: () => t("수비수 제거"), deflection: () => t("유인해 내기"), attraction: () => t("끌어들이기"), clearance: () => t("길 비우기"), interference: () => t("차단"),
-  intermezzo: () => t("중간 수"), xRayAttack: () => t("엑스레이"), sacrifice: () => t("희생"), quietMove: () => t("조용한 수"), defensiveMove: () => t("수비"), zugzwang: () => t("추크츠방"),
-  exposedKing: () => t("드러난 킹"), kingsideAttack: () => t("킹사이드 공격"), attackingF2F7: () => t("f2·f7 공격"), advancedPawn: () => t("전진한 폰"), promotion: () => t("프로모션"),
-  underPromotion: () => t("언더프로모션"), enPassant: () => t("앙파상"), castling: () => t("캐슬링"), backRankMate: () => t("백랭크 메이트"), smotheredMate: () => t("스머더드 메이트"),
-  arabianMate: () => t("아라비안 메이트"), bodenMate: () => t("보덴 메이트"), anastasiaMate: () => t("아나스타샤 메이트"), hookMate: () => t("훅 메이트"), doubleBishopMate: () => t("두 비숍 메이트"),
+  fork: () => t("포크"), pin: () => t("핀"), skewer: () => t("스큐어"), discoveredAttack: () => t("디스커버드 공격"), doubleCheck: () => t("더블 체크"), hangingPiece: () => t("행잉 피스"),
+  trappedPiece: () => t("트랩드 피스"), capturingDefender: () => t("리무빙 더 디펜더"), deflection: () => t("디플렉션"), attraction: () => t("어트랙션"), clearance: () => t("클리어런스"), interference: () => t("인터피어런스"),
+  intermezzo: () => t("인터메조"), xRayAttack: () => t("엑스레이"), sacrifice: () => t("새크리파이스"), quietMove: () => t("콰이어트 무브"), defensiveMove: () => t("디펜시브 무브"), zugzwang: () => t("추크츠방"),
+  exposedKing: () => t("익스포즈드 킹"), kingsideAttack: () => t("킹사이드 어택"), attackingF2F7: () => t("f2·f7 어택"), advancedPawn: () => t("어드밴스드 폰"), promotion: () => t("프로모션"),
+  underPromotion: () => t("언더프로모션"), enPassant: () => t("앙파상"), castling: () => t("캐슬링"), backRankMate: () => t("백랭크 메이트"), smotheredMate: () => t("스모더드 메이트"),
+  arabianMate: () => t("아라비안 메이트"), bodenMate: () => t("보덴 메이트"), anastasiaMate: () => t("아나스타샤 메이트"), hookMate: () => t("훅 메이트"), doubleBishopMate: () => t("더블 비숍 메이트"),
   dovetailMate: () => t("도브테일 메이트"), mateIn1: () => t("1수 메이트"), mateIn2: () => t("2수 메이트"), mateIn3: () => t("3수 메이트"), mate: () => t("체크메이트"),
   endgame: () => t("엔드게임"), pawnEndgame: () => t("폰 엔드게임"), rookEndgame: () => t("룩 엔드게임"), queenEndgame: () => t("퀸 엔드게임"), bishopEndgame: () => t("비숍 엔드게임"),
-  knightEndgame: () => t("나이트 엔드게임"), opening: () => t("오프닝"), middlegame: () => t("미들게임"), advantage: () => t("우세 굳히기"), crushing: () => t("결정타"), equality: () => t("비기기"),
+  knightEndgame: () => t("나이트 엔드게임"), opening: () => t("오프닝"), middlegame: () => t("미들게임"), advantage: () => t("어드밴티지"), crushing: () => t("크러싱"), equality: () => t("이퀄리티"),
   short: () => t("짧은 퍼즐"), long: () => t("긴 퍼즐"),
 };
 export const angleLabel = (a) => (ANGLE_LABEL[a] ? ANGLE_LABEL[a]() : a);
@@ -157,22 +159,40 @@ export function matchOcPuzzles(rows, theme, n = 4) {
   return out;
 }
 
-/** 최근 레슨들 → 퍼즐 묶음 목록 [{ lessonId, angle, oc }] — 같은 테마는 한 번만, 최대 max개. */
+// Lichess 테마 중 레슨 개념과 꼭 맞지 않는 넓은 테마 — 이런 레슨은 "OpenChess 고유 테마"(레슨 이름)로 보여 준다.
+const BROAD = new Set(["advantage", "crushing", "equality", "middlegame", "opening", "endgame", "defensiveMove", "short", "long", "mateIn1", "mateIn2", "mateIn3", "mate"]);
+/** (v0.7.9) 레슨의 추가 학습 테마 — { lessonId, angle(Lichess), oc, own(고유 테마 여부) }. 정확히 맞는 Lichess 테마가 없으면 own. */
+export function themeOf(lesson) {
+  const th = lessonTheme(lesson); if (!th) return null;
+  const angle = th.angles[0];
+  const own = !!lesson.motif || !BY_LESSON[lesson.id] || BROAD.has(angle) && !/mate/i.test(lesson.id);
+  return { lessonId: lesson.id, angle, oc: th.oc, own };
+}
+/** 최근 레슨들 → 퍼즐 묶음 목록 [{ lessonId, angle, oc, own }] — (v0.7.9) 레슨마다 하나(모든 레슨이 고유 퍼즐 은행을 가진다), 최대 max개. */
 export function recentThemeGroups(recentIds, lessonOf, max = 3) {
-  const out = [], seenAngle = new Set();
+  const out = [], seen = new Set();
   for (const id of recentIds || []) {
-    const l = lessonOf(id); const th = lessonTheme(l); if (!th) continue;
-    const angle = th.angles.find((a) => !seenAngle.has(a)); if (!angle) continue;
-    seenAngle.add(angle); out.push({ lessonId: id, angle, oc: th.oc });
+    if (seen.has(id)) continue;
+    const l = lessonOf(id); const g = l ? themeOf(l) : null; if (!g) continue;
+    seen.add(id); out.push(g);
     if (out.length >= max) break;
   }
   return out;
 }
 
-/** 풀이 판정: 학습자 수(SAN)가 정답 sol[i]와 같으면 정답. 마지막 수가 메이트면 다른 메이트 수도 정답. */
-export function puzzleMoveOk(fen, played, sol, i) {
+/** (v0.7.9) OpenChess 테마 퍼즐 은행(src/data/lessonPuzzleBank.json, scripts/build-lesson-puzzles.mjs)의 한 레슨 → 퍼즐 목록. */
+export function bankPuzzles(bank, lessonId) {
+  const rows = (bank && bank[lessonId]) || [];
+  return rows.map((r, k) => ({ id: "ob:" + lessonId + ":" + k, fen: r[0], sol: String(r[1]).split(" "), oks: Array.isArray(r[3]) ? r[3] : null, source: "theme", from: r[2] || "v", rating: null }));
+}
+
+/** 풀이 판정: 학습자 수(SAN)가 정답 sol[i]와 같으면 정답. 마지막 수가 메이트면 다른 메이트 수도 정답.
+ *  (v0.7.9) oks: 학습자 수마다 받아 주는 SAN 목록(은행 퍼즐 — 목표가 "체크하기"처럼 정답이 여럿인 문제). 학습자 수는 sol의 짝수 번째. */
+export function puzzleMoveOk(fen, played, sol, i, oks) {
   const strip = (s) => String(s || "").replace(/[+#!?]/g, "");
   if (strip(played) === strip(sol[i])) return true;
+  const alt = oks && oks[Math.floor(i / 2)];
+  if (Array.isArray(alt) && alt.some((x) => strip(x) === strip(played))) return true;
   if (i === sol.length - 1) { try { const c = new Chess(fen); return !!c.move(played) && c.isCheckmate(); } catch { return false; } }
   return false;
 }

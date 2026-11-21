@@ -13,12 +13,12 @@ import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS } from "../lib/
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
 import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "framer-motion";
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
-import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2, Lock } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { X, Clock, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2, Lock } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { tierFromXp, tierGradientCss } from "../lib/tierSystem.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { sbRpc, sbSelect, SB_ON, SB_TOKEN, sbRpcRow, sbInsert, sbDelete, pvpFinishVerified } from "../lib/supabaseClient.js";
 import { createPortal } from "react-dom";
-import { SITE_FONT } from "../components/engineLines.jsx";
+import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { Chess } from "chess.js";
 import HUB_SCENES from "../data/hubScenes.json";
 import { fx, buzz } from "../lib/minigameFx.js";
@@ -32,6 +32,7 @@ import { NavBtn } from "../components/uiPrimitives.jsx";
 import { Mascot, Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 AnalysisTab/리뷰의 grade)과 같은
 // 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
 // 짧게 잡고, 둔 수가 체크메이트면 둔 뒤 평가는 생략한다(엔진은 메이트 포지션에 수를 내지 못한다).
@@ -337,6 +338,9 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
       transition={{ duration: 0.32, ease: MOTION_EASE }}
       style={{ minHeight: "min(72vh, 560px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}
     >
+      {/* (v0.7.9 디자인) 장면 전체를 은은한 빛 무리 카드 위에 — 밝은 배경에서 떠 보이게 */}
+      <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center", padding: "18px 18px 24px", boxSizing: "border-box", borderRadius: 24,
+        background: "radial-gradient(120% 70% at 50% 30%, rgba(255,250,236,.95), rgba(255,250,236,.35) 70%)", border: "1px solid rgba(150,112,58,.18)", boxShadow: "0 24px 60px -34px rgba(90,58,34,.55)" }}>
       {/* (v0.4.5 리디자인, 사용자 요청) 3개의 작은 궤도 점 대신, 직전 대국의 수 체계(탁월한 수·실수·
           블런더 등)를 반영한 chess.com 스타일 아이콘들이 실제 천체처럼 얇은 타원 궤적을 따라 도는
           장면으로 발전시켰다 — OrbitingQualityIcons 정의부 주석 참고. */}
@@ -360,8 +364,13 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
         {isInvite ? t("@{0}님의 응답을 기다리는 중", oppName) : t("상대를 찾는 중")}
       </div>
       {timeControlLabel && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 14 }}>{timeControlLabel}</div>}
-      <div style={{ fontSize: 22, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".02em", marginBottom: 22 }}>{fmtClock(elapsed * 1000)}</div>
-      <button onClick={onCancel} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "1px solid rgba(196,154,80,.55)", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("취소")}</button>
+      {/* (v0.7.9) 경과 시간 — 밝은 배경 위 금색 글자는 잘 안 읽혀 짙은 알약 안에 */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.4)", marginBottom: 20 }}>
+        <PendingDots size={7} />
+        <span style={{ fontSize: 20, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em", fontVariantNumeric: "tabular-nums" }}>{fmtClock(elapsed * 1000)}</span>
+      </div>
+      <button onClick={onCancel} className="press" style={{ padding: "10px 30px", borderRadius: 999, border: "1px solid rgba(150,112,58,.35)", background: "rgba(255,255,255,.7)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px -8px rgba(90,58,34,.6)" }}>{t("취소")}</button>
+      </div>
     </motion.div>
   );
 }
@@ -598,13 +607,9 @@ const MG_GOLD = "#A97A2C";
 // 필요하지 않아 걷어냈다.)
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
-export const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: CoordCrosshairIcon, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: t("나이트 레이스"), desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
-  // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
-  { key: "rush-hour", gameType: "rush", name: t("백랭크 러시아워"), desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
-  { key: "attack-mode", gameType: "attack", name: t("무한 체크메이트 게임"), desc: t("3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급"), Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
-];
+// (v0.7.9) 이름표(PLAY_SPECIAL_GAMES)는 playSpecialGames.jsx로 옮겼다(첫 화면 번들에서 플레이 탭을 떼어 내려고). 여기서는 gameType → 게임 화면만 잇는다.
+export { PLAY_SPECIAL_GAMES };
+const SPECIAL_GAME_COMPONENTS = { coord: CoordRaceGame, knight: KnightRaceGame, rush: RushHourGame, attack: AttackModeGame };
 // (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
 // 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
 // 좁은 스크롤 영역 안에 평범한 카드로 그려져, 내 보드·상대 보드를 세로로 쌓으면 필연적으로 스크롤이
@@ -681,20 +686,46 @@ function useGridDrag({ size, cellAt, canDrag, onStart, onDrop, renderPiece }) {
 // (v0.5.7, 사용자 요청 "데스크톱에서 비효율적인 레이아웃") 미니게임 화면은 모바일 기준으로만 짜여, 데스크톱에선 점수 줄·시간 막대·
 // 랭킹 탭이 화면 끝에서 끝까지(1400px+) 늘어나고 보드는 420px에 머물러 위아래·양옆이 텅 비었다. 화면 전체를 가운데 한 열
 // (MG_DESKTOP_MAX_W)로 모으고, 보드 상한은 데스크톱에서 MG_DESKTOP_BOARD까지 올린다(useSquareFit — 남은 높이 안에서만 커진다).
-const MG_DESKTOP_MAX_W = 760, MG_DESKTOP_BOARD = 640, MG_DESKTOP_BP = 899;
+const MG_DESKTOP_MAX_W = 760, MG_DESKTOP_BOARD = 860, MG_DESKTOP_BP = 899;
+// (v0.7.9, 사용자 요청 "데스크톱 비율에 맞게") 데스크톱(가로 900px 이상)에서는 대전 화면을 2단으로 — 보드는 왼쪽 열에서 화면 높이에 맞춰 크게,
+// 점수판·라운드·정보 줄·시간 막대·버튼은 오른쪽 패널(MG_SIDE_W)에 위에서부터 쌓는다. 각 게임 화면은 바깥 틀에 className="mg-play",
+// 보드 칸에 className="mg-board"만 붙이면 된다(한 겹 안쪽의 라운드 틀도 mg-play — 데스크톱에서는 display: contents로 바깥 그리드에 합쳐진다).
+// 로비는 왼쪽에 게임 소개·내 기록, 오른쪽에 플레이 모드·친구(mg-lobby). 모바일(899px 이하)은 예전 세로 배치 그대로다.
+const MG_PLAY_MAX_W = 1240, MG_LOBBY_MAX_W = 1080, MG_SIDE_W = 360;
+const MG_DESKTOP_CSS = "@media (min-width:900px){"
+  + ".mg-play{display:grid!important;grid-template-columns:minmax(0,1fr) " + MG_SIDE_W + "px;grid-template-rows:repeat(14,auto) 1fr;column-gap:32px;align-content:stretch}"
+  + ".mg-play>*{grid-column:2;min-width:0}"
+  + ".mg-play>.mg-board{grid-column:1;grid-row:1/-1;min-height:0;align-self:stretch}"
+  + ".mg-play .mg-play{display:contents!important}"
+  + ".mg-play{position:relative;z-index:0}"
+  + ".mg-play::before{content:'';position:absolute;z-index:-1;grid-column:2;grid-row:1/-1;inset:-10px -14px;border-radius:20px;pointer-events:none;"
+  +   "background:linear-gradient(180deg,rgba(255,255,255,.58),rgba(255,255,255,.28));border:1px solid rgba(150,112,58,.2);box-shadow:0 1px 2px rgba(90,58,34,.05),0 18px 40px -26px rgba(90,58,34,.45)}"
+  + ".mg-play .mg-play::before{display:none}"
+  + ".mg-lobby{max-width:" + MG_LOBBY_MAX_W + "px!important;display:grid!important;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);column-gap:28px;align-items:start;padding-top:18px!important}"
+  + ".mg-lobby-col{display:flex!important;flex-direction:column;gap:20px;min-width:0}"
+  + ".mg-lobby-left{position:sticky;top:0}"
+  + ".mg-hero{flex-direction:column!important;align-items:flex-start!important;gap:18px!important;padding:26px 26px 28px!important;min-height:250px;justify-content:flex-end}"
+  + ".mg-hero .mg-hero-icon{width:72px!important;height:72px!important;border-radius:20px!important}"
+  + ".mg-hero .mg-hero-name{display:block!important}"
+  + ".mg-hero p{font-size:14px!important}"
+  + ".oc-bot-grid{display:grid!important;grid-template-columns:1fr 1fr}"
+  + "}";
 function MinigameScreen({ title, onBack, children, noScroll, headerRight }) {
+  const wide = !useNarrow(MG_DESKTOP_BP);
+  const maxW = !wide ? MG_DESKTOP_MAX_W : noScroll ? MG_PLAY_MAX_W : MG_LOBBY_MAX_W;   // (v0.7.9) 데스크톱은 2단이라 더 넓게
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "linear-gradient(180deg,#F7EFDF 0%,#EDE0C6 100%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
+      <style>{MG_DESKTOP_CSS}</style>
       {/* (v0.6.2, 사용자 요청) 상단 바를 짙은 에보니 판으로 — 뒤로가기 버튼·제목이 배경에 묻히지 않고 한눈에 들어오게 한다. 제목은 가운데 금색 밑줄 강조. */}
       <div style={{ flexShrink: 0, width: "100%", background: "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")", borderBottom: "2px solid " + T.brass, boxShadow: "0 6px 16px -8px rgba(36,21,9,.6)" }}>
-        <div className="flex items-center justify-between" style={{ width: "100%", maxWidth: MG_DESKTOP_MAX_W + 28, margin: "0 auto", padding: "calc(env(safe-area-inset-top,0px) + 10px) 14px 10px", boxSizing: "border-box" }}>
+        <div className="flex items-center justify-between" style={{ width: "100%", maxWidth: maxW + 28, margin: "0 auto", padding: "calc(env(safe-area-inset-top,0px) + 10px) 14px 10px", boxSizing: "border-box" }}>
           <button onClick={onBack} aria-label={t("목록으로")} className="press" style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(236,203,134,.16)", border: "1px solid rgba(236,203,134,.55)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
           <div style={{ fontSize: 16, fontWeight: 900, color: T.ivoryHi, textAlign: "center", flex: 1, letterSpacing: "-.01em", textShadow: "0 1px 0 rgba(0,0,0,.4)" }}>{title}</div>
           {headerRight || <span style={{ width: 38, flexShrink: 0 }} />}
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: "10px 14px calc(env(safe-area-inset-bottom,0px) + 14px)", display: "flex", flexDirection: "column", overflowY: noScroll ? "hidden" : "auto" }}>
-        <div style={{ width: "100%", maxWidth: MG_DESKTOP_MAX_W, margin: "0 auto", display: "flex", flexDirection: "column", ...(noScroll ? { flex: 1, minHeight: 0 } : { flex: "1 0 auto" }) }}>
+        <div style={{ width: "100%", maxWidth: maxW, margin: "0 auto", display: "flex", flexDirection: "column", ...(noScroll ? { flex: 1, minHeight: 0 } : { flex: "1 0 auto" }) }}>
           {children}
         </div>
       </div>
@@ -754,7 +785,7 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
   }, [resume, onConsumeResume]);
   const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
   if (active) {
-    const Game = active.Component;
+    const Game = SPECIAL_GAME_COMPONENTS[active.gameType];
     // (v0.5.7, BUG-025) 이미 같은 미니게임 준비 화면에 있을 때 도전장을 수락해도 새 대전으로 들어가도록, 재개할 대전마다 새로 마운트한다
     // (useMinigameMatch는 initialGame을 첫 마운트 때만 읽는다).
     return <Game key={resumeGame ? "resume-" + resumeGame.id : "lobby"} myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} myRating={myRating} canEditContent={canEditContent} />;
@@ -777,6 +808,9 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
 // (v0.5.6, 사용자 요청) 플레이 탭 버튼(일반 대국·미니게임) 최대 폭. 데스크톱에선 780px이 화면을 너무 크게 차지해
 // 520px로 줄였다 — 좁은 화면(모바일·좁은 창)은 원래대로 화면 폭을 채운다(780 제한은 사실상 닿지 않는다).
 const PLAY_HUB_MAX_W = 780, PLAY_HUB_MAX_W_DESKTOP = 520;
+const GAME_SIDE_W = 340;   // (v0.7.9) 데스크톱 일반 대국 화면 오른쪽 패널 폭
+// (v0.7.9) 일반 대국 설정 화면의 소개 카드(미니게임 로비의 MinigameHero와 같은 틀)
+const NORMAL_GAME_SPEC = { Icon: Swords, accent: "#C49A50", name: t("일반 대국"), desc: t("실시간 상대 또는 봇과 한 판. 시간 분류별 레이팅 반영") };
 const MG_GAP = 1.8;                 // 도형 사이 간격
 const MG_PAD = 3;                   // 글자 여백
 const MG_RADIUS = 3.4;              // 모서리 라운딩
@@ -873,9 +907,6 @@ const MG_PING_MS = 4000;
 function MgCrosshair({ size, color = "#fff", flat }) {
   return <FacetCrosshair size={size} color={color} style={{ filter: flat ? undefined : "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }} />;
 }
-// (v0.7.1) 좌표 인지 게임의 얼굴 아이콘 — 허브 카드·게임 보드에서 쓰던 조준경 그대로. lucide 아이콘과 같은 규격(size·color)이라 PLAY_SPECIAL_GAMES의
-// Icon 자리(로비 배너·모드 행·프로필 전적)에 그대로 들어간다. 글자색(currentColor)을 따르고 그림자는 뺀다.
-function CoordCrosshairIcon({ size = 24, color = "currentColor" }) { return <MgCrosshair size={size} color={color} flat />; }
 function MgCoordPings({ cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
   return (
@@ -1369,8 +1400,8 @@ function MinigameHubBoard({ stats, onPick, maxWidth = PLAY_HUB_MAX_W }) {
       {/* 글자 레이어 — 가운데 엠블럼과 네 버튼 이름. */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", fontFamily: SITE_FONT }}>
         <div style={{ ...box(50 - MG_HEX_S, MG_HEX_CY - MG_HEX_A, 2 * MG_HEX_S, 2 * MG_HEX_A), display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.9cqw", lineHeight: 1, letterSpacing: "-.02em", textAlign: "center", fontWeight: 900 }}>
-          {/* (v0.6.1, 사용자 요청) "MiniGame" 글자는 없애고 로고만 정중앙에 둔다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", width: "72%", height: "auto", filter: "drop-shadow(0 1px 1px rgba(90,58,34,.25))" }} />
+          {/* (v0.6.1, 사용자 요청) "MiniGame" 글자는 없애고 로고만 정중앙에 둔다. (v0.7.9, 사용자 요청) 글자 없이 나이트 로고만(public/oc-knight.webp — OpenChessLogo.png의 나이트를 잘라 만든 320px). */}
+          <img src="/oc-knight.webp" alt="OpenChess" style={{ display: "block", height: "64%", width: "auto", filter: "drop-shadow(0 1px 1.5px rgba(90,58,34,.3))" }} />
         </div>
         {MG_LABELS.map((lb) => {
           const st = stats && stats[lb.gameType];
@@ -1980,10 +2011,10 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }
   const lastDone = round && round.winner ? (round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw") : null;
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myScore} oppScore={oppScore} oppLabel={t("상대")} center={t("{0} / {1} 라운드", (rounds.length ? roundIdx + 1 : 1), COORD_TOTAL_ROUNDS)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={oppClicks} />
           {countdownAt > 0 && <MinigameCountdown startAt={countdownAt} />}
@@ -2080,10 +2111,10 @@ function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   }
   const lastDone = round && round.winner ? (round.winner === "w" ? "me" : "opp") : null;
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myScore} oppScore={botScore} oppLabel={t("봇")} center={t("{0} / {1} 라운드", (Math.max(1, rounds.length)), COORD_TOTAL_ROUNDS)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={COORD_TOTAL_ROUNDS} />
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={botClicks} />
           <MinigameCountdown startAt={countdownAt} />
@@ -2352,7 +2383,7 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
 const MG_LOBBY_LINE = "rgba(150,112,58,.2)";
 const MG_LOBBY_CARD = "rgba(255,255,255,.62)";
 const MG_LOBBY_CARD_STYLE = { borderRadius: 14, background: MG_LOBBY_CARD, border: "1px solid " + MG_LOBBY_LINE, boxShadow: "0 1px 2px rgba(90,58,34,.06), 0 6px 18px -12px rgba(90,58,34,.35)" };
-const MG_LOBBY_CSS = ".mg-row{transition:border-color .15s ease,background .15s ease,transform .08s ease}.mg-row:not(:disabled):hover{border-color:rgba(169,122,44,.55)!important;background:rgba(255,255,255,.85)!important}"
+const MG_LOBBY_CSS = ".mg-row{transition:border-color .15s ease,background .15s ease,transform .08s ease,box-shadow .15s ease}.mg-row:not(:disabled):not(.primary):hover{border-color:rgba(169,122,44,.55)!important;background:rgba(255,255,255,.85)!important}.mg-row.primary:not(:disabled):hover{border-color:" + T.brassHi + "!important;box-shadow:0 0 0 3px rgba(236,203,134,.18),0 12px 24px -14px rgba(36,21,9,.85)!important}"
   + ".mg-row.primary:not(:disabled):hover{background:linear-gradient(180deg,#D6B064,#B48E3C)!important}";
 function MgLobbyLabel({ children }) {
   return <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.6)", letterSpacing: ".02em", margin: "0 2px 8px" }}>{children}</div>;
@@ -2361,33 +2392,42 @@ function MgLobbyLabel({ children }) {
 // 설명 문구는 플레이 탭 카드와 같은 PLAY_SPECIAL_GAMES의 desc를 그대로 쓴다(새 문구 없음).
 function MinigameHero({ spec }) {
   if (!spec) return null;
-  const { Icon, accent, desc } = spec;
+  const { Icon, accent, desc } = spec;   // name: 데스크톱 큰 소개 카드에만
   return (
-    <div style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16,
+    <div className="mg-hero" style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16,
       background: "linear-gradient(135deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.38)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.08), 0 12px 26px -14px rgba(36,21,9,.75)" }}>
       <span aria-hidden="true" style={{ position: "absolute", left: -34, top: -44, width: 150, height: 150, borderRadius: "50%", background: "radial-gradient(circle," + accent + "66 0%," + accent + "00 70%)", pointerEvents: "none" }} />
       <span aria-hidden="true" style={{ position: "absolute", right: -14, bottom: -18, width: 128, height: 96, opacity: 0.1, pointerEvents: "none", transform: "rotate(-10deg)",
         backgroundImage: "conic-gradient(#FFF6DE 25%, transparent 0 50%, #FFF6DE 0 75%, transparent 0)", backgroundSize: "32px 32px",
         WebkitMaskImage: "linear-gradient(90deg, transparent, #000 70%)", maskImage: "linear-gradient(90deg, transparent, #000 70%)" }} />
-      <span style={{ position: "relative", width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff",
+      <span className="mg-hero-icon" style={{ position: "relative", width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff",
         background: "linear-gradient(150deg," + accent + "," + accent + "B3)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -6px " + accent }}><Icon size={24} strokeWidth={2.2} /></span>
-      <p style={{ position: "relative", margin: 0, minWidth: 0, wordBreak: "keep-all", fontSize: 12.5, fontWeight: 700, lineHeight: 1.55, color: "rgba(255,246,222,.88)" }}>{desc}</p>
+      <span style={{ position: "relative", minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+        {/* (v0.7.9) 데스크톱 로비 왼쪽 큰 소개 카드에서만 게임 이름을 크게(모바일은 화면 제목과 겹쳐 숨김) */}
+        <span className="mg-hero-name" style={{ display: "none", fontSize: 30, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.1, color: T.ivoryHi }}>{spec.name}</span>
+        <p style={{ margin: 0, minWidth: 0, wordBreak: "keep-all", fontSize: 12.5, fontWeight: 700, lineHeight: 1.55, color: "rgba(255,246,222,.88)" }}>{desc}</p>
+      </span>
     </div>
   );
 }
 function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable, accent }) {
   return (
     <button onClick={onClick} disabled={disabled} className={"press mg-row" + (primary ? " primary" : "")} aria-expanded={expandable ? !!open : undefined}
-      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 14px 11px 11px", textAlign: "left", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1,
-        ...MG_LOBBY_CARD_STYLE, ...(primary ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "1px solid rgba(120,84,30,.5)" } : null),
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "12px 14px 12px 12px", textAlign: "left", cursor: disabled ? "default" : "pointer",
+        ...MG_LOBBY_CARD_STYLE, ...(primary ? { background: "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.45)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.08), 0 10px 22px -14px rgba(36,21,9,.8)" } : null),
+        ...(disabled ? { filter: "grayscale(.5)", opacity: 0.5 } : null),
         ...(open ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderColor: "rgba(169,122,44,.55)" } : null) }}>
       <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
-        background: primary ? "rgba(36,21,9,.14)" : accent ? accent + "26" : "rgba(196,154,80,.15)", color: primary ? "#241509" : accent || MG_GOLD }}><Icon size={19} /></span>
+        background: primary ? "linear-gradient(150deg," + T.brassHi + "," + T.brass + ")" : accent ? accent + "26" : "rgba(196,154,80,.15)", color: primary ? "#241509" : accent || MG_GOLD,
+        boxShadow: primary ? "inset 0 1px 0 rgba(255,255,255,.35)" : "none" }}><Icon size={19} /></span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: primary ? "#241509" : T.ink, lineHeight: 1.25 }}>{label}</span>
-        {sub && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: primary ? "rgba(36,21,9,.7)" : "rgba(90,58,34,.6)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
+        <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: primary ? T.ivoryHi : T.ink, lineHeight: 1.25 }}>{label}</span>
+        {sub && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: primary ? "rgba(255,246,222,.62)" : "rgba(90,58,34,.6)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
       </span>
-      <ChevronRight size={17} style={{ flexShrink: 0, color: primary ? "#241509" : "rgba(90,58,34,.45)", transform: open ? "rotate(90deg)" : "none", transition: "transform .2s ease" }} />
+      {/* (v0.7.9) 오른쪽 화살표를 둥근 칸 안에 — 누를 수 있는 줄임이 한눈에 보이게 */}
+      <span style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: primary ? "rgba(236,203,134,.16)" : "rgba(90,58,34,.06)" }}>
+        <ChevronRight size={15} style={{ color: primary ? T.brassHi : "rgba(90,58,34,.5)", transform: open ? "rotate(90deg)" : "none", transition: "transform .2s ease" }} />
+      </span>
     </button>
   );
 }
@@ -2398,10 +2438,14 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
   const botOpen = pickBot && !!botOptions;
   const accent = spec ? spec.accent : null;
   return (
-    <div style={{ width: "100%", maxWidth: 520, margin: "0 auto", padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="mg-lobby" style={{ width: "100%", maxWidth: 520, margin: "0 auto", padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 20 }}>
       <style>{MG_LOBBY_CSS}</style>
+      {/* (v0.7.9) 데스크톱은 2단(mg-lobby-col) — 왼쪽: 게임 소개·내 기록, 오른쪽: 플레이 모드·친구. 모바일은 display: contents로 예전 세로 순서 그대로 */}
+      <div className="mg-lobby-col mg-lobby-left" style={{ display: "contents" }}>
       {spec && <motion.div {...mgRise(0)}><MinigameHero spec={spec} /></motion.div>}
       <motion.div {...mgRise(1)}>{statsBar}</motion.div>
+      </div>
+      <div className="mg-lobby-col" style={{ display: "contents" }}>
       <motion.div {...mgRise(2)}>
         <MgLobbyLabel>{t("플레이 모드")}</MgLobbyLabel>
         {err && <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 2px 8px" }}>{err}</p>}
@@ -2428,6 +2472,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
       </motion.div>
       {roster}
       {footer}
+      </div>
     </div>
   );
 }
@@ -2748,13 +2793,13 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
   }
   const left = endAt - Math.max(now, startAt);
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {/* (v0.5.7, 사용자 요청) 혼자 플레이 중에도 다시하기 — 보드를 새로 마운트해(허브의 onRematch = runKey 증가) 카운트다운·타이머·점수·
           클릭 기록을 모두 처음 상태로 되돌린다. 기록 저장은 시간이 다 됐을 때만 하므로 중간에 다시 해도 기록에 남지 않는다. */}
       <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 17, fontWeight: 900, color: left < 8000 ? "#FFB4AB" : T.brassHi, fontVariantNumeric: "tabular-nums" }}>{tx("{0}초", Math.ceil(left / 1000))}</span>}
         right={onRematch ? <button onClick={onRematch} className="press" aria-label={t("다시하기")} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(150,112,58,.45)", background: "rgba(255,255,255,.6)", color: T.ink, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0}다시하기", <RotateCcw size={13} />)}</button> : null} />
       <MinigameTimeBar pct={left / COORD_SOLO_MS} />
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={[...myClicks, ...flashes.filter((f) => !myClicks.some((c) => c.sq === f.sq))]} oppClicks={[]} hideCoords={level.hideCoords} flip={level.flip} />
           <MinigameCountdown startAt={startAt} />
@@ -2810,7 +2855,7 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
       note={best.prev ? t("이전 최고 기록 {0}회 도달, {1}초", best.prev.reached, (best.prev.ms / 1000).toFixed(1)) : t("첫 기록")} onExit={onExit} onRematch={onRematch} />;
   }
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={reached.length} oppLabel={null} center={t("{0} / {1} 라운드, 혼자 플레이", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={idx} round={round} onRoundDone={onRoundDone} solo /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -3217,10 +3262,10 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
   const [boardSize, boardFitRef] = useSquareFit();
   const roundResult = round.winner && revealed ? (round.winner === myColor ? "me" : round.winner === "draw" ? "draw" : "opp") : null;
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MgInfoStrip sec={Math.max(0, Math.ceil(timeLeftMs / 1000))} low={timePct < 0.25}>{tx("내 수 {0}, 상대 {1}", <b style={{ color: T.brassHi }}>{movesUsed}</b>, oppMovesUsed)}</MgInfoStrip>
       <MinigameTimeBar pct={timePct} />
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <KnightRaceGrid size={boardSize} myPos={pos} oppPos={oppPos} target={round.target} hazards={round.hazards} removed={[...taken, ...oppTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor={myColor} oppColor={oppColor} onCell={onCell} flip={myColor === "b"} roundKey={roundIdx}
             myCaptured={captured || !!(myRep && myRep.captured)} oppCaptured={!!(oppRep && oppRep.captured) || (!!tookOppSq && oppPos === tookOppSq && pos === tookOppSq)}
@@ -3403,10 +3448,10 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const [boardSize, boardFitRef] = useSquareFit();
   const roundResult = winner && winner !== "pending" ? (winner === "w" ? "me" : winner === "b" ? "opp" : "draw") : null;
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MgInfoStrip sec={Math.max(0, Math.ceil(timeLeftMs / 1000))} low={timePct < 0.25}>{tx("내 수 {0}", <b style={{ color: T.brassHi }}>{movesUsed}</b>)}{solo ? "" : t(", 봇 {0}", botMovesUsed)}</MgInfoStrip>
       <MinigameTimeBar pct={timePct} />
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} distFx={distFx} pathFx={pathFx} />
           <MinigameCountdown startAt={startRef.current} />
@@ -3465,7 +3510,7 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
       stats={knightResultStats(rounds.map((r) => r.mine))} onExit={onExit} onRematch={onRematch} />;
   }
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / {1} 라운드, 4선승", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -3537,7 +3582,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
       stats={knightResultStats(mine)} note={game.result_reason === "knight_forfeit" ? (iWon ? t("상대가 대전 포기") : t("대전 포기")) : null} onExit={onExit} />;
   }
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / {1} 라운드, 4선승", (roundIdx + 1), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} revealed={revealed} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -3787,13 +3832,13 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
   const diff = RUSH_DIFFS.find((d) => d.key === level.diff);
   const best = progress[level.id];
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
         <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}>{tx("{0}레벨 목록", <ChevronLeft size={14} />)}</button>
         <span style={{ fontSize: 12, fontWeight: 800, color: diff.color }}>{diff.label} {level.id.slice(1)}{level.lure ? t(", 희생") : ""}</span>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.85)" }}>{tx("수 {0}, 목표 {1}수{2}", <b style={{ color: T.ink }}>{p.moves}</b>, level.par, best ? t(", 최고 {0}", best) : "")}</span>
       </div>
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
           <RushGrid view={p.view} selected={p.selected} targets={p.targets} danger={p.danger} onCell={p.onCell} canDrag={p.canDrag} size={boardSize} lastMove={p.lastMove} levelId={level.id} />
           <AnimatePresence>
@@ -3879,7 +3924,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
   const [boardSize, boardFitRef] = useSquareFit(460);
   const diff = RUSH_DIFFS.find((d) => d.key === level.diff);
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MgInfoStrip sec={Math.ceil(left / 1000)} low={left < timeLimitMs * 0.25}>
         <span>{tx("{0}, 내 수 {1}", <b style={{ color: diff.color }}>{diff.label}</b>, <b style={{ color: T.brassHi }}>{p.moves}</b>)} ·</span>
         {/* (v0.5.7) 상대 진행 — 상대 프로필 사진을 우상단에 단 파란 알약, 상대가 수를 둘 때마다 한 번 톡 튄다. */}
@@ -3890,7 +3935,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
         </motion.span>
       </MgInfoStrip>
       <MinigameTimeBar pct={left / timeLimitMs} />
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
           <RushGrid view={p.view} selected={p.selected} targets={p.targets} danger={p.danger} onCell={p.onCell} canDrag={p.canDrag} size={boardSize} lastMove={p.lastMove} levelId={level.id + ":" + roundKey} />
           <MinigameCountdown startAt={startAt} />
@@ -3991,7 +4036,7 @@ function RushBotBoard({ onExit, onStatusChange, onRematch }) {
       rounds={rushRoundChips(rounds, "me", "opp", (r) => r.me)} stats={rushStatsOf(rounds.map((r) => r.me && { ...r.me, par: r.level.par }))} onExit={onExit} onRematch={onRematch} />;
   }
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / 3 라운드, 2선승", (Math.max(1, rounds.length)))} />
       {round && <RushRound key={idx} level={round.level} startAt={round.startAt} timeLimitMs={RUSH_ROUND_MS} roundKey={idx} result={round.winner}
         opp={{ label: t("봇"), moves: round.bot ? round.bot.moves : round.botMoves, solved: round.bot && round.bot.solved, done: !!round.bot }} onDone={onDone} />}
@@ -4050,7 +4095,7 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }
   const oppProg = round && round.progress && round.progress[opp];
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / 3 라운드, 2선승", (idx + 1))} />
       {round ? <RushPvpRoundWrap key={idx} round={round} idx={idx} gameId={game.id} onDone={onDone}
         result={round.winner ? (round.winner === me ? "me" : round.winner === opp ? "opp" : "draw") : null}
@@ -4494,7 +4539,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
   const pos = picked ? picked.pos : null;
   useEffect(() => { if (picked && picked.pos) markAttackSeen(picked.pos, pool.byGrade[current.g], picked.reset); }, [picked]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div className="mg-play" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myTally.total} oppScore={oppTally ? oppTally.total : 0} oppLabel={oppTally ? oppLabel : null}
         center={<span style={{ fontSize: 19, fontWeight: 900, color: left < 30000 ? "#FFB4AB" : T.brassHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{attackClock(left)}</span>} />
       <MinigameTimeBar pct={left / (endAt - startAt)} />
@@ -4507,7 +4552,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
           </div>
         )}
       </div>
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} className="mg-board" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
         {/* (v0.5.5, 사용자 요청) 등급·차례·몇 수 메이트인지는 보드를 가리지 않게, 보드 바로 위에 붙여 둔다. */}
         <div style={{ height: 38, marginBottom: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <AnimatePresence mode="popLayout">
@@ -4885,7 +4930,10 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   const [viewPly, setViewPly] = useState(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const narrow = useNarrow(720);
-  const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 420;
+  // (v0.7.9, 사용자 요청 "데스크톱 비율에 맞게") 데스크톱 대국 화면은 보드를 화면 높이에 맞춰 키우고(420~720px) 오른쪽에 기보·조작 패널(GAME_SIDE_W)을 둔다.
+  const [vp, setVp] = useState(() => (typeof window !== "undefined" ? { w: window.innerWidth, h: window.innerHeight } : { w: 1280, h: 900 }));
+  useEffect(() => { const on = () => setVp({ w: window.innerWidth, h: window.innerHeight }); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
+  const boardSize = narrow ? Math.min(380, vp.w - 32) : Math.max(420, Math.min(720, vp.h - 300, vp.w - GAME_SIDE_W - 120));
 
   // (신규 기능) 실시간 대국 매칭 — 대기열에 합류해 상대를 기다린다. 이미 나를 기다리던 상대가 있으면
   // pvp_queue_join이 즉시 대국을 만들어 돌려주고, 없으면 내가 대기열에 들어가고 null을 받는다 —
@@ -5461,6 +5509,8 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   const hubMaxW = narrow ? PLAY_HUB_MAX_W : PLAY_HUB_MAX_W_DESKTOP;
+  const wideGame = !narrow && step === "playing";   // (v0.7.9) 데스크톱 대국 화면 2단
+  const setupLobby = !(mode === "pvp" && (pvpWaiting || myInvite)) && setupPhase === "choose";   // (v0.7.9) 설정 화면 2단(소개·기록 | 고르기)
   const showQuest = !!(questActive && dailyQuest && step === "setup");
   const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
@@ -5470,7 +5520,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   //  1줄은 더 높은 쪽에 맞춰 데크메이트·일일 퀘스트가 늘어나고, 2줄은 미니게임 블록(그대로) 높이에 플레이 퀘스트가 맞춘다(fill).
   const gridMode = showQuest && !narrow;
   const hubTopNode = (
-        <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto", ...(gridMode ? { height: "100%", display: "flex", flexDirection: "column" } : null) }}>
+        <div style={{ maxWidth: step === "setup" ? hubMaxW : wideGame ? boardSize + GAME_SIDE_W + 24 : 460, margin: "0 auto", ...(gridMode ? { height: "100%", display: "flex", flexDirection: "column" } : null) }}>
         {step === "setup" ? (
           <>
             {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
@@ -5479,10 +5529,15 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
             <DeckmateButton fill={gridMode} />
             {setupOpen && (
               <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
-                <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
-                {!(mode === "pvp" && (pvpWaiting || myInvite)) && setupPhase === "choose" && (
-                  <div style={{ marginBottom: 12 }}><MinigameStatsBar myUid={myUid} game={chessGame} row={chessStats} onOpenRanking={() => setChessRankOpen(true)} /></div>
+                {/* (v0.7.9, 사용자 요청) 데스크톱은 미니게임 로비와 같은 2단(mg-lobby) — 왼쪽 소개 카드·내 기록, 오른쪽 타임 컨트롤·상대 고르기. 봇 고르기는 2열. */}
+                <div className={setupLobby ? "mg-lobby" : undefined} style={{ width: "100%", maxWidth: setupPhase === "bot" && !narrow ? 720 : 460, margin: "0 auto", paddingTop: 4 }}>
+                {setupLobby && (
+                  <div className="mg-lobby-col mg-lobby-left" style={{ display: "contents" }}>
+                    <div style={{ marginBottom: 12 }}><MinigameHero spec={NORMAL_GAME_SPEC} /></div>
+                    <div style={{ marginBottom: 12 }}><MinigameStatsBar myUid={myUid} game={chessGame} row={chessStats} onOpenRanking={() => setChessRankOpen(true)} /></div>
+                  </div>
                 )}
+                <div className={setupLobby ? "mg-lobby-col" : undefined} style={{ display: "contents" }}>
                 {
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
@@ -5516,7 +5571,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                         <MgRatingChip style={{ fontSize: 11.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
                       </div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
-                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "11px 3px", borderRadius: 10, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 11.5, lineHeight: 1.25, cursor: "pointer" }}>
+                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "11px 3px", borderRadius: 10, border: "1px solid " + (timeControl.key === t.key ? "rgba(236,203,134,.6)" : "rgba(150,112,58,.22)"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")" : "rgba(255,255,255,.6)", color: timeControl.key === t.key ? T.brassHi : T.ink, boxShadow: timeControl.key === t.key ? "0 0 0 3px rgba(196,154,80,.16), 0 8px 16px -10px rgba(36,21,9,.8)" : "0 1px 2px rgba(90,58,34,.06)", transition: "background .15s ease, box-shadow .15s ease", fontWeight: 800, fontSize: 11.5, lineHeight: 1.25, cursor: "pointer" }}>
                           {t.label}
                         </button>
                       ))}
@@ -5526,12 +5581,12 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                 <div style={{ height: 1, background: "#DCCBA8", margin: "0 0 14px" }} />
                 {pvpErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{pvpErr}</div>}
                 <div className="flex gap-2" style={{ marginBottom: 10 }}>
-                  <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
-                  <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
-                    <Play size={14} fill="#241509" />{!myUid ? t("로그인 후 이용 가능") : t("대국 상대 찾기")}
+                  <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(150,112,58,.22)", background: "rgba(255,255,255,.6)", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}><Clock size={14} color={T.brass} />{timeControl.label}</div>
+                  <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "1px solid " + (!myUid ? "rgba(150,112,58,.18)" : "rgba(236,203,134,.5)"), background: !myUid ? "rgba(90,58,34,.08)" : "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")", color: !myUid ? "rgba(90,58,34,.5)" : T.brassHi, boxShadow: !myUid ? "none" : "0 10px 22px -14px rgba(36,21,9,.85)", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
+                    <Play size={14} fill={!myUid ? "rgba(90,58,34,.5)" : T.brassHi} />{!myUid ? t("로그인 후 이용 가능") : t("대국 상대 찾기")}
                   </button>
                 </div>
-                <button onClick={() => { setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 16 }}>
+                <button onClick={() => { setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid rgba(150,112,58,.28)", background: "rgba(255,255,255,.72)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 16, boxShadow: "0 1px 2px rgba(90,58,34,.06), 0 6px 16px -12px rgba(90,58,34,.4)" }}>
                   {tx("{0} 봇과 플레이하기", <Cpu size={16} />)}</button>
                 {/* (v0.4.4 리디자인, 사용자 요청) 친구 목록을 눌러야 펼쳐지는 드롭다운이 아니라, 로그인만
                     돼 있으면 항상 고정으로 보이는 로스터로 바꿨다 — 처음 한 번만 살짝 스태거되며
@@ -5581,12 +5636,12 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("진영 선택")}</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", t("백")], ["b", t("흑")], ["random", t("랜덤")]].map(([k, lb]) => (
-                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? "rgba(236,203,134,.6)" : "rgba(150,112,58,.22)"), background: colorPick === k ? "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")" : "rgba(255,255,255,.6)", color: colorPick === k ? T.brassHi : T.ink, boxShadow: colorPick === k ? "0 0 0 3px rgba(196,154,80,.16)" : "none", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
                       <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: "50%", flexShrink: 0, border: "1.5px solid " + (k === "w" ? "#BFAA80" : "#000"), background: k === "w" ? "#FFFDF7" : k === "b" ? "#2A1A0E" : "conic-gradient(#FFFDF7 0 50%, #2A1A0E 0)" }} />{lb}</button>
                   ))}
                 </div>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("상대할 봇 선택")}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
+                <div className="oc-bot-grid" style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                   {PLAY_BOT_TIERS.map((t) => (
                     <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", boxShadow: botTier.elo === t.elo ? "0 6px 14px -10px rgba(120,84,30,.8)" : "none", cursor: "pointer", textAlign: "left" }}>
                       <span style={{ width: 36, height: 36, borderRadius: 11, background: tierGradientCss(PLAY_BOT_TIER_KEY[t.elo]), color: "rgba(36,21,9,.85)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: botTier.elo === t.elo ? "0 0 0 2px rgba(255,246,222,.9), 0 0 0 3.5px " + T.brass : "inset 0 1px 0 rgba(255,255,255,.35)", opacity: botTier.elo === t.elo ? 1 : 0.88 }}><Cpu size={17} /></span>
@@ -5598,12 +5653,13 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                     </button>
                   ))}
                 </div>
-                <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? t("엔진을 준비하는 중...") : t("대국 시작")}</button>
+                <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "1px solid " + ((!engine || engine.status !== "ready") ? "rgba(150,112,58,.18)" : "rgba(236,203,134,.5)"), background: (!engine || engine.status !== "ready") ? "rgba(90,58,34,.08)" : "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")", color: (!engine || engine.status !== "ready") ? "rgba(90,58,34,.5)" : T.brassHi, boxShadow: (!engine || engine.status !== "ready") ? "none" : "0 10px 22px -14px rgba(36,21,9,.85)", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? t("엔진을 준비하는 중...") : t("대국 시작")}</button>
               </>
             )}
           </div>
           )
                 }
+                </div>
                 </div>
               </MinigameScreen>
             )}
@@ -5614,6 +5670,105 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
             )}
           </>
         ) : (
+          wideGame ? (
+          // (v0.7.9, 사용자 요청) 데스크톱 대국 화면 — 왼쪽 큰 보드(상대 줄·보드·내 줄), 오른쪽 패널(대국 정보·기보표·승격·결과·조작)
+          <div style={{ display: "grid", gridTemplateColumns: boardSize + "px " + GAME_SIDE_W + "px", columnGap: 24, justifyContent: "center", alignItems: "start", paddingTop: 4 }}>
+            <div style={{ minWidth: 0 }}>
+              {playerBar(true)}
+              <div style={{ width: "100%", maxWidth: boardSize, margin: "6px auto" }}>
+                <Board board={displayBoard} flip={flip} size={boardSize} selected={isLive ? sel : null} legalTargets={isLive ? legalTargets : []} onSquareClick={isLive ? onSquareClick : undefined} onPieceDrag={isLive ? onPieceDrag : undefined} onDrop={isLive ? onDrop : undefined} interactive={isLive && userToMove} showEval={false} showCoords
+                  endFx={isLive && endState.end ? { kind: endState.end, loser: endState.color } : null} />
+              </div>
+              {playerBar(false)}
+            </div>
+            <aside className="oc-game-side" style={{ position: "sticky", top: 12, display: "flex", flexDirection: "column", gap: 12, minWidth: 0, height: boardSize + 92, padding: 14, boxSizing: "border-box", borderRadius: 16,
+              background: "linear-gradient(180deg,rgba(58,37,22,.92),rgba(36,21,9,.94))", border: "1px solid rgba(196,154,80,.32)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.06), 0 18px 40px -22px rgba(0,0,0,.8)" }}>
+              <div className="flex items-center justify-between" style={{ gap: 8 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 800, color: T.ivoryHi }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(196,154,80,.18)", color: T.brassHi }}>{mode === "pvp" ? <Swords size={14} /> : <Cpu size={14} />}</span>
+                  {mode === "pvp" ? t("실시간 대국") : t("{0} 봇", (botTier.label))}
+                </span>
+                {clock && <span style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(244,238,226,.6)", whiteSpace: "nowrap" }}>{timeControl.label}</span>}
+              </div>
+              <div className="oc-scroll" style={{ flex: 1, minHeight: 120, overflowY: "auto", borderRadius: 10, background: "rgba(0,0,0,.22)", border: "1px solid rgba(255,255,255,.06)" }}>
+                {moveRows.length === 0
+                  ? <div style={{ padding: "14px 12px", fontSize: 12, color: "rgba(244,238,226,.42)" }}>{t("둔 수 없음")}</div>
+                  : moveRows.map((row, i) => (
+                    <div key={row.num} style={{ display: "grid", gridTemplateColumns: "38px 1fr 1fr", alignItems: "center", padding: "2px 8px", background: i % 2 ? "rgba(255,255,255,.03)" : "transparent" }}>
+                      <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.42)", fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{row.num}.</span>
+                      {[row.white, row.black].map((mv, k) => mv ? (
+                        <button key={k} onClick={() => setViewPly(mv.ply)} className="press" style={{ justifySelf: "start", border: "none", padding: "4px 8px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: SEQ_FONT,
+                          background: highlightPly === mv.ply ? "rgba(196,154,80,.3)" : "transparent", color: highlightPly === mv.ply ? T.brassHi : T.ivoryHi }}>{mv.san}</button>
+                      ) : <span key={k} />)}
+                    </div>
+                  ))}
+              </div>
+              {promoPrompt && (
+                <div style={{ marginTop: 10, textAlign: "center" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{t("승격할 기물 선택")}</div>
+                  <div className="flex justify-center gap-2">
+                    {["Q", "R", "B", "N"].map((t) => (
+                      <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 46, height: 46, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><PieceGlyph type={t} color={activeColor} size={24} /></button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {result && (
+                <div style={{ marginTop: 10, textAlign: "center", padding: "12px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
+                  <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
+                    {result.end === "checkmate" ? (result.color === activeColor ? t("패배: 체크메이트") : t("승리: 체크메이트")) :
+                     result.end === "resign" ? t("기권") :
+                     result.end === "flag" ? (result.color === activeColor ? t("패배: 시간 초과") : t("승리: 시간 초과")) :
+                     result.end === "pvp" ? (
+                       result.status === "draw" ? t("무승부") :
+                       result.status === "aborted" ? t("대국 중단") :
+                       ((result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b")) ? t("승리: 상대 기권") : t("패배: 상대 승리")
+                     ) :
+                     result.end === "stalemate" ? t("무승부: 스테일메이트") : t("무승부: 3회 동형 반복")}
+                  </div>
+                </div>
+              )}
+              {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
+              <div className="flex items-center justify-center gap-3" style={{ marginTop: 2 }}>
+                <div style={{ position: "relative" }}>
+                  <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen}><Settings size={16} /></NavBtn>
+                  {optionsOpen && (
+                    <>
+                      <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                      <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", width: 170, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 10, padding: 5, zIndex: 41, display: "flex", flexDirection: "column", gap: 1, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+                        {/* (사용자 요청) 실시간 대국(봇 아님) 중에는 기권 위에 무승부 제안 버튼을 둔다 — 이미
+                              제안해 응답을 기다리는 중이면 "제안 취소"로 바뀐다. */}
+                        {!result && mode === "pvp" && (
+                            <button onClick={drawOfferedByMe ? () => respondDraw(false) : offerDraw} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
+                              <Handshake size={14} />{drawOfferedByMe ? t("무승부 제안 취소") : t("무승부 제안")}
+                            </button>
+                        )}
+                        {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("기권")}</button>}
+                        {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot, color: activeColor }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("대국 리뷰")}</button>}
+                        {/* (사용자 요청) 봇이 아닌 실시간 상대와 대국을 하는 도중에는 "다시 설정"이 뜨지 않게
+                              한다 — 상대는 그대로 둔 채 설정만 바꿔 새로 시작할 방법이 없어(재도전은 별도
+                              흐름) 대국 중엔 이 버튼이 의미가 없고, 실수로 눌러 진행 중인 대국을 잃을 위험만
+                              있다. 대국이 끝난 뒤에는(리뷰·새 대국 시작 용도로) 그대로 둔다. */}
+                        {(mode !== "pvp" || result) && <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("다시 설정")}</button>}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <NavBtn onClick={stepBack} disabled={!canGoBack}><ChevronLeft size={17} /></NavBtn>
+                <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
+              </div>
+            </aside>
+            <AnimatePresence>
+              {resultModalOpen && result && (
+                <PlayResultModal result={result} activeColor={activeColor} mode={mode} botTier={botTier} opponentPub={opponentPub}
+                  myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null} moveCount={Math.ceil(sans.length / 2)}
+                  onClose={() => setResultModalOpen(false)}
+                  onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot, color: activeColor }); setResultModalOpen(false); } : null}
+                  onRematch={requestRematch} rematchOfferedByMe={rematchOfferedByMe} rematchOfferedByOpp={rematchOfferedByOpp} />
+              )}
+            </AnimatePresence>
+          </div>
+          ) : (
           <div>
             {/* (사용자 요청) chess.com 대국 화면과 같은 구성 — 맨 위 수순 스트립(누르면 그 시점으로
                 되돌아본다), 상대(봇) 정보 줄, 보드, 내 정보 줄, 그 아래 결과/컨트롤. */}
@@ -5698,6 +5853,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
               <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
+          )
         )}
         </div>
   );
@@ -5721,7 +5877,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
     // 일반 대국 부분만 460px로 가운데에 둔다.
     // (v0.7.4, 사용자 요청) 일일 퀘스트는 학습 탭에서 이 탭으로 옮겼다. 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트로 나누고, 모바일은 허브 아래에 이어 붙인 세로 스크롤 페이지.
     // 대국 중(step === "playing")에는 퀘스트를 그리지 않는다. 숨겨진 탭에서 완료 공개 연출이 미리 끝나지 않도록 questActive(이 탭이 보일 때)만 마운트한다.
-    <div style={gridMode ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gridTemplateAreas: '"hub dq" "mg pq"', columnGap: 28, rowGap: 14, alignItems: "stretch" } : { maxWidth: 880, margin: "0 auto" }}>
+    <div style={gridMode ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gridTemplateAreas: '"hub dq" "mg pq"', columnGap: 28, rowGap: 14, alignItems: "stretch" } : { maxWidth: step === "playing" && !narrow ? 1180 : 880, margin: "0 auto" }}>
       {pagedPlay ? <SwipePager pages={[{ key: "play", node: hubNode }, { key: "quest", node: questNode }]} />
         : gridMode ? (
           <>

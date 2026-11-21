@@ -25,11 +25,11 @@ import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { SeriesGlyph, livePuzzleName, ALL_TITLE_IDS, seriesLabelText, titleNameText, ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, postTypeInfo, gamePostTitle, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { kindOfPost } from "../lib/legacyPosts.js";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
-import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import UgcText from "../components/UgcText.jsx";
-import { lessonSummary } from "../lib/lessons/progress.js";
+import { lessonSummary } from "../lib/lessons/state.js";
 // (v0.2.6 버그 수정) 수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리 근처의 기준
 // 요소에서 열리면, 원래 자리(중앙 정렬 또는 좌우 끝 맞춤) 그대로 뜨면서 팝업 폭만큼 화면 밖으로
 // 잘려 나갔다. 기준 요소의 화면상 위치(anchorRect)를 이용해, 팝업이 그 자리 그대로(정렬 방식에

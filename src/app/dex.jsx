@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 'dex' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetSpark } from "../components/facetIcons.jsx";
+import { createLayerHint } from "../lib/layerHint.js";
 import { blockKeywords } from "../lib/moveKeywords.js";
 import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRules.js";
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
@@ -548,10 +549,14 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   const canvasRef = useRef(null);
   const commitTimerRef = useRef(null);
   const motionRafRef = useRef(null);
+  const layerHintRef = useRef(null);
+  if (!layerHintRef.current) layerHintRef.current = createLayerHint();   // BUG-198: 조작 중에만 will-change
+  useEffect(() => () => layerHintRef.current.dispose(), []);
   const applyView = (p, z) => {
     panRef.current = p; zoomRef.current = z;
     const el = canvasRef.current;
-    if (el) el.style.transform = "translate(" + p.x + "px," + p.y + "px) scale(" + z + ")";
+    if (el) { el.style.transform = "translate(" + p.x + "px," + p.y + "px) scale(" + z + ")"; layerHintRef.current.touch(el, z); }
+    refreshCullWindow();   // (BUG-198) 150ms 주기만 기다리지 않고 움직일 때마다 그릴 범위 이탈을 확인한다(이탈이 없으면 비용 없음)
   };
   const commitView = () => {
     if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
@@ -1173,7 +1178,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || !!flightPath} />
-      <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden", willChange: "transform" }}>
+      <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden" }}>
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
             라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
         {culledGroups.map((g) => (

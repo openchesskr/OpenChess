@@ -29,11 +29,11 @@ ok("클라이언트·서버 최대 수순 길이 같음", CLIENT_MAX === YT_MAX_
 
 const learn = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
 const block = readFileSync(new URL("../src/components/youtubeVideos.jsx", import.meta.url), "utf8");
-// (v0.7.8) 영상 블록은 댓글 아래 "커뮤니티" 블록(웹 검색 + 영상) 안으로 옮겼다
+// (v0.7.8) 영상 블록은 "커뮤니티" 블록(웹 검색 + 영상) 안으로 옮겼다. (v0.7.9, 사용자 요청) 커뮤니티 블록을 댓글 블록 위로.
 const community = readFileSync(new URL("../src/components/communityBlock.jsx", import.meta.url), "utf8");
-ok("해설 페이지에 댓글 블록 + 커뮤니티 블록", /<MoveExplainBlock [^>]*\/>\s*<CommunityBlock sans=\{focusVideoSans\} name=\{dispName \|\| null\}[^>]*\/>/.test(learn));
+ok("해설 페이지에 커뮤니티 블록 + 댓글 블록(v0.7.9 순서)", /<CommunityBlock sans=\{focusVideoSans\} name=\{dispName \|\| null\}[^>]*\/>\s*<MoveExplainBlock [^>]*\/>/.test(learn));
 ok("커뮤니티 블록 안에 영상 블록", /<YoutubeVideosBlock sans=\{q\} bare first=\{off\.web\} \/>/.test(community));
-ok("댓글 블록 제목이 \"댓글\"", learn.includes('{t("댓글")}</span>'));
+ok("댓글 블록 제목이 \"댓글 N개\"(유튜브식, v0.7.9)", learn.includes('t("댓글 {0}개", count)'));
 ok("영상 블록에 iframe 없음(CSP frame 제한 유지)", !/<iframe/i.test(block));
 ok("영상 링크는 새 창·noopener", /target="_blank" rel="noopener noreferrer"/.test(block));
 

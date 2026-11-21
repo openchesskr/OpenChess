@@ -23,7 +23,7 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus, MoreVertical } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -33,7 +33,7 @@ import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { BestMoveJumpButton, ListPager, NavBtn } from "../components/uiPrimitives.jsx";
 import { playMoveSfx } from "../lib/prefs.js";
-import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick, usersProfiles } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
@@ -1977,64 +1977,113 @@ const MOVE_NOTE_SORTS = {
   date: { label: t("날짜순"), order: "created_at.asc" },
   recent: { label: t("최신순"), order: "created_at.desc" },
 };
-function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump, onVote }) {
-  // (사용자 요청) 예전엔 작성자 본인도 스스로 못 고치고 개발자(canModerate)만 편집·삭제할 수
-  // 있었다 — 이제 자기 글은 본인이 자유롭게 고치고 지울 수 있고, 개발자/공동개발자는 그대로
-  // 모든 글에 대해 편집 권한을 유지한다(RLS도 함께 맞춤, supabase-setup.sql 15번 섹션 참고).
+// (v0.7.9, 사용자 요청) 댓글 블록을 유튜브 댓글창과 같은 레이아웃·UI로 — 아바타 | @아이디 · 시간 / 본문 / 좋아요(숫자)·싫어요(숫자 없음) 행, 오른쪽 ⋮ 메뉴(수정·삭제).
+// 작성란은 내 아바타 + 밑줄 입력칸이고, 누르면 취소·댓글 버튼이 펼쳐진다. 머리에는 "댓글 N개"와 정렬 메뉴. 데이터(move_notes·move_note_vote)는 그대로다.
+const NOTE_AVATAR_BG = ["#8A6322", "#3F6B4E", "#2E6FB0", "#7A4E8C", "#A8452F", "#4F5B66"];
+function NoteAvatar({ photo, name, size = 36 }) {
+  const [bad, setBad] = useState(false);
+  const nm = (name || "?").replace(/^@/, "");
+  let h = 0; for (const ch of nm) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (
+    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, overflow: "hidden", display: "inline-flex", alignItems: "center", justifyContent: "center", background: NOTE_AVATAR_BG[h % NOTE_AVATAR_BG.length], color: "#fff", fontWeight: 700, fontSize: Math.round(size * 0.42) }}>
+      {photo && !bad ? <img src={photo} alt="" onError={() => setBad(true)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : nm.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+// 바깥을 누르면 닫히는 작은 메뉴(정렬·⋮). items: [{ key, label, onPick, danger }]
+function NoteMenu({ open, onClose, items, align = "right", top = 34 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("pointerdown", off, true); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", off, true); document.removeEventListener("keydown", esc); };
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div ref={ref} role="menu" style={{ position: "absolute", top, [align]: 0, zIndex: 30, minWidth: 128, padding: "6px 0", borderRadius: 12, background: "#FFFDF6", border: "1px solid #DCCBA8", boxShadow: "0 8px 24px rgba(36,21,9,.18)" }}>
+      {items.map((it) => (
+        <button key={it.key} role="menuitem" onClick={() => { onClose(); it.onPick(); }} className="press" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "8px 14px", border: "none", background: it.active ? "rgba(184,138,58,.14)" : "transparent", color: it.danger ? T.blunder : T.ink, fontSize: 12.5, fontWeight: it.active ? 800 : 600, cursor: "pointer", textAlign: "left", whiteSpace: "nowrap" }}>
+          {it.icon}{it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+const ytIconBtn = (active) => ({ width: 32, height: 32, borderRadius: "50%", border: "none", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: active ? T.ink : T.inkSoft, padding: 0, flexShrink: 0 });
+const ytPill = (primary, enabled) => ({ padding: "7px 14px", borderRadius: 999, border: "none", fontSize: 12.5, fontWeight: 700, cursor: enabled ? "pointer" : "default",
+  background: primary ? (enabled ? T.ebony2 || "#241509" : "rgba(36,21,9,.08)") : "transparent", color: primary ? (enabled ? T.brassHi : T.inkSoft) : T.ink });
+// 유튜브식 밑줄 입력칸 — 내용에 맞춰 높이가 늘어난다.
+function NoteInput({ value, onChange, placeholder, autoFocus, onFocus }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => { const el = ref.current; if (el) { el.style.height = "0px"; el.style.height = Math.min(160, el.scrollHeight) + "px"; } }, [value]);
+  return (
+    <textarea ref={ref} value={value} onChange={onChange} onFocus={onFocus} autoFocus={autoFocus} rows={1} placeholder={placeholder} className="oc-yt-input"
+      style={{ width: "100%", boxSizing: "border-box", resize: "none", overflow: "hidden", border: "none", borderBottom: "1px solid #C9B58C", background: "transparent", color: T.ink, fontSize: 13, lineHeight: 1.5, padding: "4px 0 5px", outline: "none", fontFamily: "inherit" }} />
+  );
+}
+const YT_CSS = ".oc-yt-input:focus{border-bottom:2px solid #241509 !important;padding-bottom:4px !important}.oc-yt-ib:hover{background:rgba(36,21,9,.08) !important}.oc-yt-ghost:hover{background:rgba(36,21,9,.08) !important}";
+function MoveNoteCard({ n, photo, canModerate, uid, onSaved, onDeleted, ownSans, onJump, onVote }) {
+  // (사용자 요청) 자기 글은 본인이, 개발자/공동개발자는 모든 글을 고치고 지울 수 있다(RLS도 같은 규칙, supabase-setup.sql 15번 섹션).
   const canEditThis = canModerate || (!!uid && n.uid === uid);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(n.body);
   const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(false);
   const save = async () => {
-    const t = draft.trim();
-    if (!t || moveNoteEffectiveLen(t) > MOVE_NOTE_MAX_LEN || containsBannedWord(t)) return;
+    const t_ = draft.trim();
+    if (!t_ || moveNoteEffectiveLen(t_) > MOVE_NOTE_MAX_LEN || containsBannedWord(t_)) return;
     setBusy(true);
-    try { await sbPatch("move_notes", "id=eq." + n.id, { body: t }); onSaved(n.id, t); setEditing(false); } catch { } finally { setBusy(false); }
+    try { await sbPatch("move_notes", "id=eq." + n.id, { body: t_ }); onSaved(n.id, t_); setEditing(false); } catch { } finally { setBusy(false); }
   };
   const remove = async () => {
     setBusy(true);
     try { await sbDelete("move_notes", "id=eq." + n.id); onDeleted(n.id); } catch { setBusy(false); }
   };
+  const name = n.author_username || t("익명");
   return (
-    <div style={{ flexShrink: 0, scrollSnapAlign: "start", boxSizing: "border-box", minHeight: 96, display: "flex", flexDirection: "column", justifyContent: "space-between", paddingBottom: 8 }}>
-      <div>
-        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass }}>@{n.author_username || t("익명")}</span>
-          <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(n.created_at)}</span>
-        </div>
+    <div style={{ display: "flex", gap: 12, padding: "10px 0", alignItems: "flex-start" }}>
+      <NoteAvatar photo={photo} name={name} />
+      <div style={{ minWidth: 0, flex: 1 }}>
         {editing ? (
           <div>
-            <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); }} rows={3} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
-            <div className="flex items-center justify-between" style={{ marginTop: 4 }}>
+            <NoteInput value={draft} autoFocus onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); }} />
+            <div className="flex items-center justify-between" style={{ marginTop: 6, gap: 8 }}>
               <span style={{ fontSize: 11, color: T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
-              <div className="flex gap-2">
-                <button disabled={busy} onClick={save} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
-                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("취소")}</button>
+              <div className="flex" style={{ gap: 6 }}>
+                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press oc-yt-ghost" style={ytPill(false, true)}>{t("취소")}</button>
+                <button disabled={busy || !draft.trim()} onClick={save} className="press" style={ytPill(true, !busy && !!draft.trim())}>{t("저장")}</button>
               </div>
             </div>
           </div>
         ) : (
-          <UgcText text={n.body} kind="note" render={(shown) => <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{renderMoveNoteBody(shown, ownSans, onJump)}</p>} />
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{name}</span>
+              <span style={{ fontSize: 11.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(n.created_at)}</span>
+            </div>
+            <UgcText text={n.body} kind="note" render={(shown) => <p style={{ fontSize: 13.5, color: T.ink, fontWeight: 500, lineHeight: 1.55, margin: "2px 0 0", wordBreak: "break-word" }}>{renderMoveNoteBody(shown, ownSans, onJump)}</p>} />
+            {/* 좋아요(숫자)·싫어요(유튜브처럼 숫자 없음). 같은 걸 다시 누르면 취소, 반대를 누르면 바뀐다. 로그인 전에는 숫자만. */}
+            <div className="flex items-center" style={{ marginTop: 2, marginLeft: -8 }}>
+              <button onClick={() => uid && onVote(n.id, 1)} disabled={!uid} aria-label={t("좋아요")} aria-pressed={n.my_vote === 1} title={t("좋아요")} className="press oc-yt-ib" style={ytIconBtn(n.my_vote === 1)}>
+                <ThumbsUp size={16} fill={n.my_vote === 1 ? T.ink : "none"} />
+              </button>
+              <span style={{ fontSize: 11.5, color: T.inkSoft, minWidth: 14, marginRight: 4 }}>{n.likes > 0 ? n.likes : ""}</span>
+              <button onClick={() => uid && onVote(n.id, -1)} disabled={!uid} aria-label={t("싫어요")} aria-pressed={n.my_vote === -1} title={t("싫어요")} className="press oc-yt-ib" style={ytIconBtn(n.my_vote === -1)}>
+                <ThumbsDown size={16} fill={n.my_vote === -1 ? T.ink : "none"} />
+              </button>
+            </div>
+          </>
         )}
       </div>
-      {!editing && (
-        <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-          {/* (사용자 요청) 유튜브 댓글처럼 좋아요/싫어요 — 같은 걸 다시 누르면 취소, 반대를 누르면
-              그쪽으로 바뀐다. 로그인하지 않았으면(uid 없음) 카운트만 보이고 누를 수 없다. */}
-          <div className="flex items-center gap-2">
-            <button onClick={() => uid && onVote(n.id, 1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === 1 ? T.brass : T.inkSoft }}>
-              <ThumbsUp size={12} fill={n.my_vote === 1 ? T.brass : "none"} /><span style={{ fontSize: 11.5, fontWeight: 700 }}>{n.likes || 0}</span>
-            </button>
-            <button onClick={() => uid && onVote(n.id, -1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === -1 ? T.blunder : T.inkSoft }}>
-              <ThumbsDown size={12} fill={n.my_vote === -1 ? T.blunder : "none"} /><span style={{ fontSize: 11.5, fontWeight: 700 }}>{n.dislikes || 0}</span>
-            </button>
-          </div>
-          {canEditThis && (
-            <div className="flex gap-2">
-              <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>{t("편집")}</button>
-              <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 11, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
-            </div>
-          )}
+      {canEditThis && !editing && (
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <button onClick={() => setMenu((v) => !v)} aria-label={t("작업 더보기")} aria-haspopup="menu" aria-expanded={menu} className="press oc-yt-ib" style={ytIconBtn(false)}><MoreVertical size={16} /></button>
+          <NoteMenu open={menu} onClose={() => setMenu(false)} items={[
+            { key: "edit", label: t("수정"), icon: <Pencil size={14} />, onPick: () => { setDraft(n.body); setEditing(true); } },
+            { key: "del", label: t("삭제"), icon: <Trash2 size={14} />, danger: true, onPick: () => { if (!busy) remove(); } },
+          ]} />
         </div>
       )}
     </div>
@@ -2091,7 +2140,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
     setBusy(true); setErr("");
     try {
       await sbInsert("move_notes", { move_key: moveKey, uid, author_username: username || "", body: t_ });
-      setDraft(""); await load();
+      setDraft(""); setComposing(false); await load();   // (v0.7.9) 등록하면 유튜브처럼 작성란을 접는다
     } catch { setErr(t("등록 실패. 잠시 후 다시 시도")); }
     setBusy(false);
   };
@@ -2105,52 +2154,78 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
     if (!res) return;
     setNotes((prev) => prev ? prev.map((x) => (x.id === noteId ? { ...x, my_vote: res.my_vote, likes: res.likes, dislikes: res.dislikes } : x)) : prev);
   };
+  // (v0.7.9) 작성자 프로필 사진 — 댓글 작성자·나(작성란)의 공개 프로필(pub.photo)
+  const [photos, setPhotos] = useState({});
+  const [sortOpen, setSortOpen] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [shown, setShown] = useState(10);
+  useEffect(() => { setShown(10); setComposing(false); }, [moveKey]);
+  const photoUids = useMemo(() => [...new Set([...(notes || []).map((n) => n.uid), uid].filter((x) => x && !(x in photos)))], [notes, uid]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!photoUids.length) return undefined;
+    let off = false;
+    usersProfiles(photoUids).then((m) => { if (off) return; setPhotos((prev) => { const next = { ...prev }; for (const id of photoUids) next[id] = (m[id] && m[id].pub && typeof m[id].pub.photo === "string") ? m[id].pub.photo : null; return next; }); });
+    return () => { off = true; };
+  }, [photoUids.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const count = notes ? notes.length : 0;
+  const cancelCompose = () => { setDraft(""); setErr(""); setComposing(false); };
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <div className="flex items-center gap-2"><MessageSquare size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("댓글")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 11.5, color: T.inkSoft }}>{notes.length}</span>}</div>
-      </div>
-      {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
-          때만 의미가 있으므로 그때만 보여준다. */}
-      {hasNotes && notes.length > 1 && (
-        <div className="flex items-center gap-1" style={{ marginBottom: 8 }}>
-          {Object.entries(MOVE_NOTE_SORTS).map(([key, s]) => (
-            <button key={key} onClick={() => setNoteSort(key)} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "1px solid " + (noteSort === key ? T.brass : "#DCCBA8"), background: noteSort === key ? T.brass : "transparent", color: noteSort === key ? "#241509" : T.inkSoft, cursor: "pointer" }}>{s.label}</button>
-          ))}
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "12px 14px", boxSizing: "border-box" }}>
+      <style>{YT_CSS}</style>
+      {/* 머리: 댓글 N개 + 정렬 기준(인기순·날짜순·최신순) */}
+      <div className="flex items-center" style={{ gap: 18, marginBottom: 12 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{notes === null ? t("댓글") : t("댓글 {0}개", count)}</span>
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setSortOpen((v) => !v)} aria-haspopup="menu" aria-expanded={sortOpen} className="press oc-yt-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 8px", marginLeft: -8, borderRadius: 999, border: "none", background: "transparent", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+            <ArrowUpDown size={15} />{t("정렬 기준")}
+          </button>
+          <NoteMenu open={sortOpen} onClose={() => setSortOpen(false)} align="left" items={Object.entries(MOVE_NOTE_SORTS).map(([key, so]) => ({ key, label: so.label, active: noteSort === key, onPick: () => setNoteSort(key) }))} />
         </div>
-      )}
+      </div>
+      {/* 작성란: 내 아바타 + 밑줄 입력칸. 누르면 취소·댓글 버튼이 펼쳐진다 */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 6 }}>
+        <NoteAvatar photo={uid ? photos[uid] : null} name={uid ? (username || "?") : "?"} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          {!uid ? (
+            <div style={{ fontSize: 13, color: T.inkSoft, padding: "4px 0 5px", borderBottom: "1px solid #C9B58C" }}>{t("로그인 후 댓글 작성 가능")}</div>
+          ) : !canAddMore ? (
+            <div style={{ fontSize: 12.5, color: T.inkSoft, padding: "4px 0 5px", borderBottom: "1px solid #C9B58C", lineHeight: 1.5 }}>{cap > 1 ? t("이 수에 댓글 {0}개 작성함(최대 {1}개). 댓글의 ⋮ 메뉴에서 수정·삭제 가능", myNotes.length, cap) : t("이미 작성함. 댓글의 ⋮ 메뉴에서 수정·삭제 가능")}</div>
+          ) : (
+            <>
+              <NoteInput value={draft} placeholder={t("댓글 추가…")} onFocus={() => setComposing(true)} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} />
+              {(composing || draft) && (
+                <>
+                  <div className="flex items-center justify-between" style={{ marginTop: 6, gap: 8 }}>
+                    <span style={{ fontSize: 11, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
+                    <div className="flex" style={{ gap: 6 }}>
+                      <button onClick={cancelCompose} className="press oc-yt-ghost" style={ytPill(false, true)}>{t("취소")}</button>
+                      <button disabled={busy || !draft.trim()} onClick={async () => { await submit(); }} className="press" style={ytPill(true, !busy && !!draft.trim())}>{t("댓글")}</button>
+                    </div>
+                  </div>
+                  {/* (v0.4.0 기능) 수 번호와 함께 적은 수·[[…]] 수순은 링크가 된다 */}
+                  <p style={{ fontSize: 10, color: T.inkSoft, marginTop: 6, lineHeight: 1.45 }}>{tx("Tip: \"12.Nf3\"처럼 수 번호와 함께 적으면 해당 수로 이동하는 링크가 됨. 이어지는 수순으로 링크하려면 {0}처럼 대괄호 두 개 안에 수 번호와 수순을 공백으로 구분해 적기. 대괄호 안은 150자 제한에서 제외", <code style={{ fontSize: 9.5 }}>[[12.e5 Nf3 Nc6 Bb5]]</code>)}</p>
+                </>
+              )}
+              {err && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
+            </>
+          )}
+        </div>
+      </div>
       {notes === null ? (
         <LoadingRows lines={3} label={t("불러오는 중…")} />
       ) : hasNotes ? (
-        <>
-          <div key={noteSort} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", maxHeight: 260, WebkitOverflowScrolling: "touch" }}>
-            {notes.map((n) => (
-              <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump} onVote={onVote}
-                onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
-                onDeleted={(id) => setNotes((prev) => prev.filter((x) => x.id !== id))} />
-            ))}
-          </div>
-        </>
-      ) : (
-        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6 }}>{t("아직 댓글 없음. 첫 댓글 남기기")}</p>
-      )}
-      <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
-      {!uid ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{t("로그인 후 댓글 작성 가능")}</p>
-      ) : !canAddMore ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{cap > 1 ? t("이미 이 수에 설명을 {0}개 남겼어요(최대 {1}개). 위 카드에서 수정·삭제 가능", myNotes.length, cap) : t("이미 작성함. 위 카드에서 수정·삭제 가능")}</p>
-      ) : (
-        <div>
-          <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder={t("이 수에 댓글 작성")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
-          <div className="flex items-center justify-between" style={{ marginTop: 5 }}>
-            <span style={{ fontSize: 11, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
-            <button disabled={busy || !draft.trim()} onClick={submit} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: busy ? "default" : "pointer", opacity: busy || !draft.trim() ? 0.6 : 1 }}>{t("등록")}</button>
-          </div>
-          {/* (v0.4.0 기능) 바로 다음 수는 SAN을 그냥 문장에 적기만 해도 자동으로 링크가 된다는 것과,
-              더 뒤쪽 수로 링크를 걸려면 [[...]] 안에 이어지는 수순을 적어야 한다는 걸 안내한다. */}
-          <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>{tx("Tip: \"12.Nf3\"처럼 수 번호와 함께 적으면 해당 수로 이동하는 링크가 됨. 이어지는 수순으로 링크하려면 {0}처럼 대괄호 두 개 안에 수 번호와 수순을 공백으로 구분해 적기. 대괄호 안은 150자 제한에서 제외", <code style={{ fontSize: 9.5 }}>[[12.e5 Nf3 Nc6 Bb5]]</code>)}</p>
-          {err && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
+        <div key={noteSort}>
+          {notes.slice(0, shown).map((n) => (
+            <MoveNoteCard key={n.id} n={n} photo={photos[n.uid]} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump} onVote={onVote}
+              onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
+              onDeleted={(id) => setNotes((prev) => prev.filter((x) => x.id !== id))} />
+          ))}
+          {notes.length > shown && (
+            <button onClick={() => setShown((v) => v + 10)} className="press oc-yt-ghost" style={{ ...ytPill(false, true), display: "inline-flex", alignItems: "center", gap: 6, color: "#2E6FB0", marginLeft: 40 }}><ChevronDown size={14} />{t("댓글 {0}개 더보기", Math.min(10, notes.length - shown))}</button>
+          )}
         </div>
+      ) : (
+        <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.6, margin: "8px 0 2px 48px" }}>{t("아직 댓글 없음. 첫 댓글 남기기")}</p>
       )}
     </div>
   );
@@ -2198,12 +2273,13 @@ function CrownIcon({ size = 14 }) {
   );
 }
 // 선수 한 줄 — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·왕관은 항상 보임).
-function MasterPlayerLine({ side, name, rating, winner, plain, delta }) {
+function MasterPlayerLine({ side, name, rating, winner, plain, delta, noRating }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
       <SideSquare side={side} />
       <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : <MasterNameLink name={name}>{fullPlayerName(name)}</MasterNameLink>}</b>
-      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "-"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
+      {/* (v0.7.9) noRating: 전체 통계는 레이팅을 보이지 않는다(사용자 요청) */}
+      {!noRating && <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "-"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>}
       {winner && <CrownIcon />}
     </div>
   );
@@ -2256,9 +2332,11 @@ function summarizeForStats(list, ply, bucket) {
   trend.splice(0, Math.max(0, trend.length - 8));
   return { w, d, b, n: w + d + b, trend };
 }
-/* (v0.7.8, 사용자 요청) 집중 분석 유저 통계의 "전체 통계" — Lichess 오프닝 탐색기(lichess DB)의 이 수순 최고 레이팅 대국·최근 대국을 서버(api/explorer-games.js)가
-   받을 때마다 OpenChess DB에 쌓고(빅데이터), 전체 승·무·패와 다음 수 통계, 지금까지 쌓인 대국 목록을 보여 준다. 대국을 누르면 lichess.org에서 그 대국을 연다. */
-const EXPLORER_PAGE = 10;
+/* (v0.7.8, 사용자 요청) 집중 분석 유저 통계의 "전체 통계" — Lichess 오프닝 탐색기(lichess DB)의 이 수순 최고 레이팅 대국·최근 대국을 서버(api/lichess.js?games=1)가
+   받을 때마다 OpenChess DB에 쌓고(빅데이터), 전체 승·무·패와 다음 수 통계, 지금까지 쌓인 대국 목록을 보여 준다.
+   (v0.7.9, 사용자 요청) 설명 문구·"쌓인 대국 n판" 삭제, 목록을 "추천 대국"(최고 레이팅)·"최근 대국"으로 나눔, 레이팅은 숨기고 나머지는 마스터·내 통계 대국 행과 같게.
+   대국을 눌러도 lichess.org로 나가지 않는다 — 기보는 서버가 PGN으로 받아 저장해 둔 것(api/lichess.js?gpgn=1)을 펼치고, 보기·리뷰 버튼으로 OpenChess 안에서 연다. */
+const EXPLORER_PAGE = 5;   // 섹션(추천·최근)마다 한 쪽에 5판
 const explorerCache = new Map();   // 수순 → 응답(같은 화면 안에서 오갈 때 다시 부르지 않음)
 function useExplorerGames(active, path) {
   const key = path.join(",");
@@ -2278,10 +2356,77 @@ function useExplorerGames(active, path) {
   return { ...st, retry: () => { explorerCache.delete(key); setRetry((n) => n + 1); } };
 }
 const explorerSpeedLabel = (sp) => (sp === "ultraBullet" ? t("울트라불릿") : sp === "bullet" ? t("불릿") : sp === "blitz" ? t("블리츠") : sp === "rapid" ? t("래피드") : sp === "classical" ? t("클래시컬") : sp === "correspondence" ? t("통신") : sp);
-function ExplorerStatsCard({ path, ply, onPickMove }) {
-  const { loading, data, error, retry } = useExplorerGames(true, path);
+// (v0.7.9) 전체 통계 대국의 기보 — 서버가 저장한 PGN(처음엔 Lichess에서 받아 검증·저장). 같은 대국은 이 탭 안에서 다시 묻지 않는다.
+const explorerPgnCache = new Map();   // id → Promise<string[]>(SAN 수순)
+function fetchExplorerSans(id) {
+  if (explorerPgnCache.has(id)) return explorerPgnCache.get(id);
+  const p = fetch(apiUrl("/api/lichess?gpgn=1&id=" + encodeURIComponent(id)))
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((d) => { const sans = d && typeof d.pgn === "string" ? parsePgnSans(d.pgn) : []; if (!sans.length) throw new Error(t("빈 기보")); return sans; });
+  explorerPgnCache.set(id, p);
+  p.catch(() => explorerPgnCache.delete(id));   // 실패는 기억하지 않는다(다시 시도 가능)
+  return p;
+}
+// 대국 행 — 마스터 통계 행과 같은 구조(두 선수 줄·왕관·결과, 날짜·시간 규정 줄, 보기·리뷰 버튼, 누르면 기보 펼침). 레이팅만 숨긴다.
+function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onReview }) {
+  const [sans, setSans] = useState(null);   // null | "loading" | "error" | string[]
+  useEffect(() => {
+    if (!expanded || Array.isArray(sans) || sans === "loading") return;
+    let off = false; setSans("loading");
+    fetchExplorerSans(g.id).then((x) => { if (!off) setSans(x); }, () => { if (!off) setSans("error"); });
+    return () => { off = true; };
+  }, [expanded]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const meta = [g.month ? g.month.replace("-", ".") : null, g.speed ? explorerSpeedLabel(g.speed) : null].filter(Boolean).join(", ");
+  return (
+    <>
+      <div onClick={onToggle} role="button" aria-expanded={expanded} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: dim ? 0.5 : 1 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+              <MasterPlayerLine plain noRating side="w" name={g.white.name} winner={g.winner === "white"} />
+              <MasterPlayerLine plain noRating side="b" name={g.black.name} winner={g.winner === "black"} />
+            </div>
+            <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{meta}{busy === "open" ? t(", 기보를 불러오는 중…") : busy === "review" ? t(", 리뷰를 여는 중…") : ""}</div>
+        </div>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+          <button onClick={() => onOpen()} disabled={!!busy || dim} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: busy || dim ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+          <BestMoveJumpButton onClick={() => onReview()} disabled={!!busy || dim} />
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ margin: "0 0 6px" }}>
+          {sans === "loading" || sans == null ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("기보 불러오는 중…")}</span>
+            : sans === "error" ? <span style={{ fontSize: 11, color: T.blunder }}>{t("기보를 불러오지 못함")}</span>
+            : <MasterPgnBox sans={sans} focusPly={ply + 1} onPick={(n) => onOpen(n)} />}
+        </div>
+      )}
+    </>
+  );
+}
+function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview }) {
   const [page, setPage] = useState(0);
-  useEffect(() => { setPage(0); }, [path.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(0); }, [games]);
+  if (!games.length) return null;
+  const pageCount = Math.max(1, Math.ceil(games.length / EXPLORER_PAGE));
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{title}</div>
+      {games.slice(page * EXPLORER_PAGE, (page + 1) * EXPLORER_PAGE).map((g) => (
+        <ExplorerGameRow key={g.id} g={g} ply={ply} expanded={expandedId === g.id} onToggle={() => setExpandedId((v) => (v === g.id ? null : g.id))}
+          busy={busyId === g.id ? busyKind : null} dim={!!busyId && busyId !== g.id} onOpen={(atPly) => onOpen(g, atPly)} onReview={() => onReview(g)} />
+      ))}
+      <ListPager page={page} setPage={setPage} pageCount={pageCount} />
+    </div>
+  );
+}
+function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) {
+  const { loading, data, error, retry } = useExplorerGames(true, path);
+  const [expandedId, setExpandedId] = useState(null);
+  const [busy, setBusy] = useState({ id: null, kind: null });
+  const [openErr, setOpenErr] = useState(null);   // null | "open" | "review"
+  useEffect(() => { setExpandedId(null); setOpenErr(null); }, [path.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
   const games = useMemo(() => (data && data.games ? data.games : []).map((g) => {
     const m = /^(\d{4})-(\d\d)$/.exec(g.month || "");
     return { ...g, year: m ? +m[1] : null, _month: m ? (+m[1]) * 12 + (+m[2] - 1) : null };
@@ -2291,38 +2436,32 @@ function ExplorerStatsCard({ path, ply, onPickMove }) {
     const tt = data && data.totals, n = tt ? tt.white + tt.draws + tt.black : 0;
     return n > 0 ? { ...base, w: tt.white, d: tt.draws, b: tt.black, n } : base;
   }, [games, data, ply]);
-  const pageCount = Math.max(1, Math.ceil(games.length / EXPLORER_PAGE));
-  const items = games.slice(page * EXPLORER_PAGE, (page + 1) * EXPLORER_PAGE);
+  // 추천 대국 = Lichess "최고 레이팅" 대국(높은 순), 최근 대국 = Lichess "최근 대국"(최근 달 순)
+  const topGames = useMemo(() => games.filter((g) => g.source === "top"), [games]);
+  const recentGames = useMemo(() => games.filter((g) => g.source !== "top").sort((a, b) => (b._month ?? -1) - (a._month ?? -1)), [games]);
+  const run = async (g, kind, fn) => {
+    if (busy.id) return;
+    setBusy({ id: g.id, kind }); setOpenErr(null);
+    try { await fn(await fetchExplorerSans(g.id)); } catch { setOpenErr(kind); } finally { setBusy({ id: null, kind: null }); }
+  };
+  const open = (g, atPly) => run(g, "open", (sans) => onOpenGame && onOpenGame(sans, atPly));
+  const review = (g) => run(g, "review", (sans) => onOpenReview && onOpenReview({ moves: sans, white: { username: g.white.name, rating: null }, black: { username: g.black.name, rating: null } }));
+  const sectionProps = { ply, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review };
   return (
     <div style={{ marginTop: 12, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 2, gap: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("전체 통계")}</span>
-        {data && data.stored > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}>{tx("OpenChess에 쌓인 대국 {0}판", fmtFull(data.stored))}</span>}
-      </div>
-      <div style={{ fontSize: 11, color: T.inkSoft }}>{t("Lichess 전체 대국 기준. 이 수순의 최고 레이팅·최근 대국을 계속 모아 저장")}</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("전체 통계")}</div>
       {error ? (
         <p style={{ marginTop: 10, fontSize: 12, color: T.inkSoft }}>{t("전체 통계 로드 실패")}{" "}<button onClick={retry} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>{t("다시 시도")}</button></p>
       ) : (
         <>
           <StatsSummaryCard loading={loading} summary={summary} title={t("전체 승률")} moves={data ? data.moves : []} onPickMove={onPickMove} ply={ply} />
           {!loading && data && (games.length === 0 ? <p style={{ marginTop: 10, fontSize: 12, color: T.inkSoft }}>{t("이 수순의 대국 없음")}</p> : (
-            <div style={{ marginTop: 8 }}>
-              {items.map((g) => (
-                <a key={g.id} href={"https://lichess.org/" + g.id} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", textDecoration: "none", color: "inherit" }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                        <MasterPlayerLine side="w" name={g.white.name} rating={g.white.rating} winner={g.winner === "white"} plain />
-                        <MasterPlayerLine side="b" name={g.black.name} rating={g.black.rating} winner={g.winner === "black"} plain />
-                      </div>
-                      <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 4, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
-                    </div>
-                    <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{[g.month ? g.month.replace("-", ".") : null, g.speed ? explorerSpeedLabel(g.speed) : null, g.source === "top" ? t("최고 레이팅") : t("최근 대국")].filter(Boolean).join(" · ")}</div>
-                  </div>
-                </a>
-              ))}
-              <ListPager page={page} setPage={setPage} pageCount={pageCount} />
-            </div>
+            <>
+              <ExplorerGameSection title={t("추천 대국")} games={topGames} {...sectionProps} />
+              <ExplorerGameSection title={t("최근 대국")} games={recentGames} {...sectionProps} />
+              {openErr === "open" && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
+              {openErr === "review" && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
+            </>
           ))}
         </>
       )}
@@ -2721,7 +2860,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
             )}
       </div>
       {/* (v0.7.8, 사용자 요청) 내 통계 아래 전체 통계 — Lichess 최고 레이팅·최근 대국을 OpenChess에 쌓아 보여 준다 */}
-      <ExplorerStatsCard path={[...sans, san]} ply={ply} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} />
+      <ExplorerStatsCard path={[...sans, san]} ply={ply} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} onOpenGame={onOpenMyGame} onOpenReview={onOpenMyGameAnalyze} />
         </>,
         <>
       {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
@@ -2814,8 +2953,9 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         <>
         <div>
           {/* (v0.7.1, 사용자 요청) 해설 페이지 = 유저 댓글(MoveExplainBlock) + (v0.7.8) 커뮤니티 블록 — 그 수의 오프닝 이름(없으면 PGN 수순)으로 찾은 웹 검색 결과 + YouTube 영상 */}
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
+          {/* (v0.7.9, 사용자 요청) 커뮤니티 블록을 댓글 블록 위로 */}
           <CommunityBlock sans={focusVideoSans} name={dispName || null} dev={!!canEdit} />
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
         </div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
@@ -3551,9 +3691,10 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     });
   };
   // (19차 기능2) 내 chess.com 대국을 클릭 — 기보를 이미 갖고 있으므로(fetch 불필요) 그대로 보드에 로드.
-  const onOpenMyGame = (gameSans) => {
+  // (v0.7.9) atPly: 그 대국에서 n번째 수까지 진행된 보드로 연다(전체 통계 기보에서 수를 눌렀을 때, 마스터 onOpenMasterGame과 같음).
+  const onOpenMyGame = (gameSans, atPly) => {
     if (!gameSans || !gameSans.length) return;
-    const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
+    const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
   // (v0.2.0 기능) "게임 리뷰" — 예전엔 대국을 분석 보드에 불러오며 즉석 분석 모드(AnalysisModal)를
