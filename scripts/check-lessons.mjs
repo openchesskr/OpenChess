@@ -136,5 +136,27 @@ for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
   const OLD = ["질식 메이트", "스머더드", "승격", "이중 공격", "빗나가게 하기", "과부하", "중간수", "수비수 제거", "복도 메이트", "보든 메이트", "아나스타시아", "그리스 선물", "교환 희생", "퀸 희생", "희생", "폰 돌파", "겹친 폰", "고립된 폰", "통과한 폰", "열린 파일", "예방 수", "공간 우위", "후보 수", "핵심 칸", "폰의 정사각형", "영구 체크", "사다리", "학자 메이트", "바보 메이트", "좋은 비숍", "나쁜 비숍", "킹 차단", "유인"];
   for (const w of OLD) { const hit = strs.find((x) => x.includes(w)); if (hit) fails.push("레슨 용어는 원문 발음으로(예전 표기 \"" + w + "\"): " + hit.slice(0, 50)); }
 }
+
+// (v0.7.9, 사용자 요청) 가르친 뒤 묻기 — 객관식 질문은 ① 바로 앞 스텝이 설명(read, 대화 포함)이거나 ② 정답의 낱말 절반 이상이 이미 그 레슨에서
+//  나온 것이어야 한다(제목·설명·수 안내·직접 둔 수 포함). 설명 없이 상식으로 풀게 하는 질문이 생기면 curriculumTalkData.js의 TEACH에 설명을 넣을 것.
+{
+  const strip = (w) => w.replace(/[.,·?!'"()…:「」]/g, "").replace(/(으로|에서|에게|까지|부터|이라|이다|입니다|합니다|하는|하면|해야|으면|은|는|이|가|을|를|과|와|로|에|의|도|만|한|된|할|해)$/, "");
+  const words = (x) => String(x).split(/\s+/).map(strip).filter((w) => w.length >= 2);
+  const untaught = [];
+  for (const l of lessons) {
+    let ctx = l.title() + " " + l.sub(), prev = null;
+    for (const s of l.body()) {
+      if (s.kind === "choice" && !s.review) {
+        const ws = words(s.options[s.answer]), hit = ws.filter((w) => ctx.includes(w)).length;
+        if (!(prev && prev.kind === "read") && ws.length && hit / ws.length < 0.5) untaught.push(l.id + ": \"" + s.say + "\" (정답 \"" + s.options[s.answer] + "\")");
+        ctx += " " + s.options[s.answer];
+      }
+      ctx += " " + (s.say || "");
+      if (s.line && s.fen) { try { const c = new Chess(s.fen); for (const g of s.line) { if (g.say) ctx += " " + g.say; const u = g.goal && g.goal.uci ? g.goal.uci[0] : g.hint; if (u) { const m = c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] }); if (m) ctx += " " + m.san; } if (g.reply) { const r = c.move({ from: g.reply.slice(0, 2), to: g.reply.slice(2, 4), promotion: g.reply[4] }); if (r) ctx += " " + r.san; } } } catch { /* 합법성은 위에서 검사 */ } }
+      prev = s;
+    }
+  }
+  for (const u of untaught) fails.push("설명 전에 묻는 질문 — " + u);
+}
 if (fails.length) { console.error("✗ check-lessons 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-lessons: 단계 " + STAGES.length + "개 · 레슨 " + lessons.length + "개 · 스텝 " + steps + "개(수 두기 목표 " + moves + "개)가 모두 합법이고 정답·힌트·응수가 맞으며, 서버 보상 목록과 일치한다");
