@@ -6342,4 +6342,13 @@ export default {
   "트랩드 피스": "Trapped pieces",
   "인터피어런스": "Block",
   "크러싱": "Decisive blow",
+  "{0}년": "{0} yrs",
+  "도전 {0}회": "Challenges: {0}",
+  "세계 챔피언": "World Champion",
+  "세계선수권 도전자": "World Championship challenger",
+  "수록 기간": "Years covered",
+  "자주 둔 오프닝": "Favorite openings",
+  "즐겨 두는 수": "Favorite moves",
+  "평균 수": "Avg. moves",
+  "현 챔피언": "Reigning",
 };

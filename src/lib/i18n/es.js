@@ -6342,4 +6342,13 @@ export default {
   "트랩드 피스": "Piezas atrapadas",
   "인터피어런스": "Bloquear",
   "크러싱": "Golpe decisivo",
+  "{0}년": "{0} años",
+  "도전 {0}회": "Desafíos: {0}",
+  "세계 챔피언": "Campeón mundial",
+  "세계선수권 도전자": "Aspirante al Campeonato Mundial",
+  "수록 기간": "Años registrados",
+  "자주 둔 오프닝": "Aperturas favoritas",
+  "즐겨 두는 수": "Jugadas favoritas",
+  "평균 수": "Jugadas medias",
+  "현 챔피언": "Campeón actual",
 };

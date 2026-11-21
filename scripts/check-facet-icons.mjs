@@ -15,6 +15,7 @@ const ZONES = [
   ["src/components/facetIcons.jsx", null, null],
   ["src/components/ocIcons.jsx", null, null],
   ["src/components/pieceIcons.jsx", null, null],   // (v0.7.9) 새 파셋 기물 6종·8×8 보드 아이콘
+  ["src/components/dexCardKit.jsx", "export function CardEmblem(", "\n}\n"],   // (v0.7.9) 마스터 상세 카드 엠블럼
   ["src/app/lessons.jsx", "function GlyphChip(", "\n}\n"],   // (v0.7.9) 레슨 아이콘 배지 바탕   // (v0.7.5) 사이트 전체 UI 아이콘 세트(예전 lucide 대체)
   ["src/components/titleEmblems.jsx", "const FacetSquare", "// 그림자(검정 단색"],
   ["src/app/analysis.jsx", "function CrownIcon(", "\n}\n"],

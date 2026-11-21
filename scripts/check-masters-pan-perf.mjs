@@ -19,5 +19,13 @@ if (/TOURNAMENT_TYPES|setFtype/.test(s)) extra.push("대회 키워드 선택 UI�
 if (!/RotateCcw/.test(s) || !/resetView/.test(s)) extra.push("처음 화면으로 되돌리는 버튼 누락");
 const setting = readFileSync(new URL("../src/app/settings.jsx", import.meta.url), "utf8"), tv = readFileSync(new URL("../src/components/tournamentView.jsx", import.meta.url), "utf8");
 if (/<select[^>]*move-fx-mode/.test(setting) || /<select[^>]*value=\{year\}/.test(tv)) extra.push("시각 효과·대회 연도 선택에 브라우저 기본 <select> 사용(사이트 드롭다운 Dropdown.jsx를 쓸 것)");
+// (BUG-198) 아주 큰 모식도 캔버스(오프닝·마스터)에 will-change: transform을 늘 걸어 두면 처음 올린 배율로 래스터가 고정돼
+//  높은 배율 → 25%로 줄였을 때 GPU 타일 메모리를 넘겨 이동 중 트리 일부가 빈 칸으로 보였다. 조작 중에만 거는 createLayerHint를 써야 한다.
+const dexSrc = readFileSync(new URL("../src/app/dex.jsx", import.meta.url), "utf8");
+for (const [name, src] of [["dexMasters.jsx", s], ["dex.jsx", dexSrc]]) {
+  if (/willChange:\s*"transform"/.test(src)) extra.push(name + ": 모식도 캔버스에 will-change: transform을 고정으로 걸었음 — lib/layerHint.js(createLayerHint)로 조작 중에만(BUG-198)");
+  if (!/createLayerHint\(\)/.test(src) || !/layerHintRef\.current\.touch\(/.test(src)) extra.push(name + ": 캔버스를 움직일 때 layerHint.touch를 부르지 않음(BUG-198)");
+}
+if (!/refreshCullWindow\(\);[^\n]*BUG-198/.test(dexSrc)) extra.push("dex.jsx: applyView에서 그릴 범위 이탈을 바로 확인하지 않음(BUG-198)");
 if (extra.length) { console.error("✗ " + extra.join("\n✗ ")); process.exit(1); }
 console.log("✓ 마스터 트리 패닝 성능·검색·드롭다운 구조 유지");

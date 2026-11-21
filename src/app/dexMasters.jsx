@@ -3,6 +3,7 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import { readTabMemory, writeTabMemory } from "../lib/tabMemory.js";
+import { createLayerHint } from "../lib/layerHint.js";
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
 import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
@@ -33,12 +34,13 @@ import EditionView from "../components/tournamentView.jsx";
 import { GameViewButton, BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import MasterProfile from "../components/masterProfile.jsx";
+import { CardHero, StatGrid, Section, TimeRow, splitWhen, ChipList } from "../components/dexCardKit.jsx";   // (v0.7.9) 상세 카드 뼈대
 import { hasTournamentData, loadTournamentSearch } from "../lib/tournamentData.js";
 import { tournamentsOfPlayerQuery } from "../lib/masterProfile.js";
 import { decodeMoves } from "../lib/moveCodec.js";
 
 const CULL_MARGIN = 1.0, CULL_Q = 240;
-const cullK = (z) => (z < 0.5 * MASTER_ZOOM_LABEL_BASE ? 0.3 : 1);   // (v0.6.6) 낮은 배율에서는 화면 안에 노드가 수백 개라 여유 범위를 좁혀 그리는 노드 수를 줄인다   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
+const cullK = (z) => (z < 0.5 * MASTER_ZOOM_LABEL_BASE ? 0.7 : 1);   // (v0.7.9, BUG-198) 0.3 → 0.7: 25% 배율에서 빠르게 끌면 그려 둔 범위 끝(빈 칸)이 화면에 드러나 트리가 끊겨 보였다   // (v0.6.6) 낮은 배율에서는 화면 안에 노드가 수백 개라 여유 범위를 좁혀 그리는 노드 수를 줄인다   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
 const BASE_LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null);   // 챔피언·도전자 노드만(상세 카드가 위성 노드를 찾는 용도)
 const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
 const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66", general: "#5F8A8B" };
@@ -276,104 +278,106 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
   const winners = WINNERS[r.id] || [];
   const isTeam = r.type === "team";
   const winName = (n) => (isTeam ? (lang === "ko" && COUNTRY_KO[n] ? COUNTRY_KO[n] : n) : playerName(n, "en"));
-  const head = (txt) => <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, margin: "10px 0 3px" }}>{txt}</div>;
   const rowSty = { fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT };
   const results = info ? [...(info.complete || []).map((x) => ({ ...x, sure: true })), ...(info.partial || []).map((x) => ({ ...x, sure: false }))].sort((a, b) => b.y - a.y) : [];
   const sansOf = (g) => (g.mc ? decodeMoves(g.mc) : g.m.split(" "));
   const openReview = (g) => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sansOf(g), white: { username: enName(g.w), rating: g.we }, black: { username: enName(g.b), rating: g.be } });
+  const note = (txt) => <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, fontFamily: SITE_FONT }}>{txt}</div>;
   return (
     <div>
-      {winners.length > 0 && <>
-        {head(WINNER_KIND[r.id] === "titleChanges" ? t("챔피언이 바뀐 해") : t("역대 우승"))}
-        <div style={{ maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
-          {[...winners].reverse().map(([y, names]) => (
-            <div key={y} style={rowSty}>{y}, {names.map(winName).join(", ")}{checks[y] === "ok" && <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 900, color: T.best }}>✓</span>}</div>
-          ))}
-        </div>
-        <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>{t("✓ = 마스터 대국 DB 출전자와 대조 확인. 우승 기록은 검수 전 자료")}</div>
-      </>}
-      {head(info && info.pgn ? t("대회 자료") : t("마스터 대국 DB"))}
-      {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 3 }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
-      {!idx ? <LoadingRows lines={2} label={t("불러오는 중…")} /> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
-        <div style={rowSty}>{t("대국 {0}판", info.games)}, {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
-        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(", ")}</div>}
-        {!info.pgn && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>}
-        {results.length > 0 && <>
-          {head(info.pgn ? t("집계 결과") : t("DB 집계 결과"))}
-          {results.map((x) => <div key={x.y} style={rowSty}>{x.y}, {x.winners.map((n) => enName(n)).join(", ")} ({fmtScore(x.score)}), <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
-          <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
+      {winners.length > 0 && (
+        <Section title={WINNER_KIND[r.id] === "titleChanges" ? t("챔피언이 바뀐 해") : t("역대 우승")} aside={winners.length}>
+          <div style={{ maxHeight: 188, overflowY: "auto", paddingRight: 4 }}>
+            {[...winners].reverse().map(([y, names]) => (
+              <TimeRow key={y} when={y} badge={checks[y] === "ok" ? <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ flexShrink: 0, fontSize: 10, fontWeight: 900, color: T.best }}>✓</span> : null}>{names.map(winName).join(", ")}</TimeRow>
+            ))}
+          </div>
+          {note(t("✓ = 마스터 대국 DB 출전자와 대조 확인. 우승 기록은 검수 전 자료"))}
+        </Section>
+      )}
+      <Section title={info && info.pgn ? t("대회 자료") : t("마스터 대국 DB")}>
+        {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6, fontFamily: SITE_FONT }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
+        {!idx ? <LoadingRows lines={2} label={t("불러오는 중…")} /> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
+          <StatGrid items={[{ label: t("수록 대국"), value: t("대국 {0}판", info.games) }, { label: t("수록 기간"), value: info.y0 + (info.y1 !== info.y0 ? "–" + info.y1 : "") }]} />
+          {!info.pgn && note(t("DB에는 일부 대국만 수록되어 실제 대회보다 적음"))}
+          {info.players.length > 0 && <div style={{ marginTop: 8 }}><div style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 4, fontFamily: SITE_FONT }}>{t("최다 출전")}</div><ChipList items={info.players.map(([n, c]) => ({ main: enName(n), sub: t("{0}회", c) }))} /></div>}
         </>}
-        {info.top.length > 0 && <>
-          {head(t("대표 대국"))}
+      </Section>
+      {results.length > 0 && (
+        <Section title={info.pgn ? t("집계 결과") : t("DB 집계 결과")} aside={results.length}>
+          {results.map((x) => <TimeRow key={x.y} when={x.y} badge={<span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: x.sure ? T.best : T.inkSoft, border: "1px solid " + (x.sure ? "rgba(63,122,58,.45)" : "#D9C9A8"), borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span>}>{x.winners.map((n) => enName(n)).join(", ")} <span style={{ color: T.inkSoft }}>({fmtScore(x.score)})</span></TimeRow>)}
+          {note(t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락"))}
+        </Section>
+      )}
+      {info && info.top && info.top.length > 0 && (
+        <Section title={t("대표 대국")} aside={info.top.length}>
           {info.top.map((g) => (
-            <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
-              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 7px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y}, <MasterNameLink name={g.w}>{enName(g.w)}</MasterNameLink> {g.we ? "(" + g.we + ")" : ""} – <MasterNameLink name={g.b}>{enName(g.b)}</MasterNameLink> {g.be ? "(" + g.be + ")" : ""}, {g.r}
+            <div key={g.id} className="flex items-center gap-1" style={{ marginBottom: 4 }}>
+              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "5px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, lineHeight: 1.35 }}>
+                <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><MasterNameLink name={g.w}>{enName(g.w)}</MasterNameLink>{g.we ? " (" + g.we + ")" : ""} – <MasterNameLink name={g.b}>{enName(g.b)}</MasterNameLink>{g.be ? " (" + g.be + ")" : ""}</div>
+                <div style={{ fontSize: 10, color: T.inkSoft }}>{g.y}, {g.r}</div>
               </div>
               <GameViewButton onClick={() => onOpenGame && onOpenGame(sansOf(g))} />
               <BestMoveJumpButton onClick={() => openReview(g)} />
             </div>
           ))}
-        </>}
-      </>}
+        </Section>
+      )}
     </div>
   );
 }
 
+// (v0.7.9, 사용자 요청) 상세 카드 재디자인 — 머리띠(엠블럼·이름·요약 칩) → 핵심 수치 타일 → 섹션(연도 알약 목록·통계)의 한 가지 뼈대(components/dexCardKit.jsx).
 function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }) {
-  let title = "", sub = "", cc = "", flag = "", rows = [], blocks = [], profName = "";
+  let title = "", cc = "", profName = "", eyebrow = "", rank = null, chips = [], stats = [], sections = [], kind = pick.type;
+  const rows = (lines, toneOf) => lines.map((l, j) => { const [w, rest] = splitWhen(l); return w ? <TimeRow key={j} when={w} tone={toneOf ? toneOf(j) : undefined}>{rest}</TimeRow> : <div key={j} style={{ fontSize: 12, fontWeight: 600, color: T.ink, fontFamily: SITE_FONT, lineHeight: 1.5 }}>{rest}</div>; });
   if (pick.type === "champ") {
     const c = BY_ID.get(pick.id);
-    title = personName(c); sub = ""; cc = c.cc; flag = flagEmoji(c.cc); profName = c.name;
+    title = personName(c); cc = c.cc; profName = c.name; eyebrow = t("세계 챔피언");
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
-    blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? ", " + TAG_LABEL()[c.tag] : "")] });
-    if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.from))) });
-    if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + ", " + personName(d) + ", " + d.score + (d.won ? ", " + t("등극") : d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : "")) });
-    if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.to))) });
-    if (c.to == null) blocks.push({ head: t("다음 타이틀전"), lines: [UPCOMING.date + ", " + personName(UPCOMING)] });
+    chips = [c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)"), reignText(c)].concat(c.tag ? [TAG_LABEL()[c.tag]] : []);
+    const won = c.defenses.filter((d) => d.won).length, drew = c.defenses.filter((d) => d.draw).length;
+    stats = [
+      { label: t("재위"), value: reignText(c), sub: c.to == null ? t("현 챔피언") : t("{0}년", c.to - c.from) },
+      { label: t("타이틀전 기록"), value: t("{0}회", c.defenses.length), sub: c.defenses.length ? t("승 {0}, 무 {1}, 패 {2}", won, drew, c.defenses.length - won - drew) : null },
+    ];
+    if (ins.length) sections.push({ head: t("타이틀 획득"), body: rows(ins.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.from)))) });
+    if (c.defenses.length) sections.push({ head: t("타이틀전 기록"), aside: c.defenses.length, body: rows(c.defenses.map((d) => d.y + ", " + personName(d) + ", " + d.score + (d.won ? ", " + t("등극") : d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : "")), (j) => (c.defenses[j].won ? "win" : c.defenses[j].draw ? "draw" : undefined)) });
+    if (outs.length) sections.push({ head: t("타이틀 상실"), body: rows(outs.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.to))), () => "lose") });
+    if (c.to == null) sections.push({ head: t("다음 타이틀전"), body: <TimeRow when={UPCOMING.date.slice(0, 4)}>{UPCOMING.date + ", " + personName(UPCOMING)}</TimeRow> });
   } else if (pick.type === "tour") {
     const r = TOURNAMENTS.find((x) => x.id === pick.id), at = championAt(CHAMPIONS, r.from);
-    title = personName(r); sub = ""; cc = r.cc;
-    blocks.push({ head: t("종류"), lines: [TOUR_LABEL()[r.type] + (r.freq ? ", " + FREQ_LABEL()[r.freq] : "")] });
-    blocks.push({ head: t("기간"), lines: [tourPeriod(r)] });
-    blocks.push({ head: t("개최지"), lines: [tourPlace(r)] });
-    blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? ", " + numText(at) : "") : t("공위기")] });
+    title = personName(r); cc = r.cc; eyebrow = TOUR_LABEL()[r.type];
+    chips = [tourPeriod(r)].concat(r.freq ? [FREQ_LABEL()[r.freq]] : []);
+    stats = [
+      { label: t("종류"), value: TOUR_LABEL()[r.type] },
+      { label: t("기간"), value: tourPeriod(r), sub: r.freq ? FREQ_LABEL()[r.freq] : null },
+      { label: t("개최지"), value: tourPlace(r), span: 2 },
+      { label: t("개최 당시 세계 챔피언"), value: at ? personName(at) + (at.no ? ", " + numText(at) : "") : t("공위기"), span: 2 },
+    ];
   } else if (pick.type === "fide") {
-    const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
-    title = masterName(f[2], "en"); sub = ""; cc = f[3]; flag = flagEmoji(f[3]); profName = f[2];
-    blocks.push({ head: t("랭킹"), lines: ["FIDE " + cat + " #" + f[0]] });
-    blocks.push({ head: t("레이팅"), lines: [String(f[4])] });
-    if (f[5]) blocks.push({ head: t("출생 연도"), lines: [String(f[5])] });
-    blocks.push({ head: "FIDE", lines: [FIDE.month] });
+    const [, list, rk] = pick.id.split(":"), f = FIDE.lists[list][+rk - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
+    title = masterName(f[2], "en"); cc = f[3]; profName = f[2]; eyebrow = "FIDE " + cat; rank = f[0];
+    chips = ["FIDE " + cat + " #" + f[0], FIDE.month];
+    stats = [{ label: t("랭킹"), value: "#" + f[0], sub: "FIDE " + cat }, { label: t("레이팅"), value: String(f[4]) }, { label: t("출생 연도"), value: f[5] ? String(f[5]) : null }, { label: "FIDE", value: FIDE.month }];
   } else if (pick.type === "dbm") {
     const m = DBM.masters[+pick.id.split(":")[1]];
-    title = masterName(m[0], "en"); sub = ""; flag = masterFlag(m[0]); profName = m[0];
-    blocks.push({ head: t("마스터 대국 DB"), lines: [t("대국 {0}판", m[1])] });
-    if (m[2]) blocks.push({ head: t("최고 레이팅"), lines: [String(m[2])] });
+    title = masterName(m[0], "en"); profName = m[0]; eyebrow = t("마스터 대국 DB");
+    chips = [t("대국 {0}판", m[1])];
+    stats = [{ label: t("마스터 대국 DB"), value: t("대국 {0}판", m[1]) }, { label: t("최고 레이팅"), value: m[2] ? String(m[2]) : null }];
   } else {
-    const n = BASE_LAYOUT.byNodeId.get(pick.id), s = n.sat, c = BY_ID.get(n.champId);
-    title = personName(s); sub = ""; cc = s.cc; flag = flagEmoji(s.cc); profName = s.name;
-    blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + ", " + personName(c) + ", " + d.score + (d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : ", " + t("패"))) });
+    const n = BASE_LAYOUT.byNodeId.get(pick.id), sat = n.sat, c = BY_ID.get(n.champId);
+    kind = "sat"; title = personName(sat); cc = sat.cc; profName = sat.name; eyebrow = t("세계선수권 도전자");
+    chips = [t("도전 {0}회", sat.matches.length)];
+    sections.push({ head: t("세계선수권 도전 기록"), body: rows(sat.matches.map((d) => d.y + ", " + personName(c) + ", " + d.score + (d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : ", " + t("패"))), (j) => (sat.matches[j].draw ? "draw" : sat.matches[j].tourney ? undefined : "lose")) });
   }
+  const flagNode = !cc ? (pick.type === "dbm" && masterFlag(profName) ? <span style={{ fontSize: 17, lineHeight: 1 }}>{masterFlag(profName)}</span> : null) : <CountryChip cc={cc} size={17} />;
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}
-      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" || profName ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
-      <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{profName ? <MasterNameLink name={profName}>{title}</MasterNameLink> : title}</div>
-          {sub && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1 }}>{sub}</div>}
-        </div>
-        <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-          {cc ? <CountryChip cc={cc} /> : null}
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 24, height: 24, borderRadius: 7, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-        </div>
-      </div>
-      {blocks.map((b, i) => (
-        <div key={i} style={{ marginTop: i ? 10 : 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>{b.head}</div>
-          {(b.lines || []).map((l, j) => <div key={j} style={{ fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT }}>{l}</div>)}
-        </div>
-      ))}
+      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: 372, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 16px 36px -10px rgba(0,0,0,.55)", padding: 14 }}>
+      <CardHero kind={kind} rank={rank} eyebrow={eyebrow} title={profName ? <MasterNameLink name={profName} style={{ textDecorationColor: "rgba(236,203,134,.5)" }}>{title}</MasterNameLink> : title} chips={chips} right={flagNode} onClose={onClose} />
+      <StatGrid items={stats} />
+      {sections.map((b, i) => <Section key={i} title={b.head} aside={b.aside}>{b.body}</Section>)}
       {pick.type === "tour" && <TourExtra r={TOURNAMENTS.find((x) => x.id === pick.id)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       {profName && <MasterProfile name={profName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenTour={onOpenTour} />}
       {pick.type === "champ" || pick.type === "sat" ? <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 12 }}>{t("점수는 챔피언–도전자 순. 괄호는 타이브레이크")}</div> : null}
@@ -498,7 +502,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const dragRef = useRef(null), movedRef = useRef(false);
   const rect = () => (boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, left: 0, top: 0 });
   const clamp = (p, z) => { const r = rect(); return clampMasterPan(p, z, r.width, r.height, layoutRef.current); };
-  const paint = (v) => { const el = canvasRef.current; if (el) el.style.transform = "translate(" + v.x + "px," + v.y + "px) scale(" + v.z + ")"; };
+  const layerHintRef = useRef(null);
+  if (!layerHintRef.current) layerHintRef.current = createLayerHint();   // BUG-198: 조작 중에만 will-change
+  useEffect(() => () => layerHintRef.current.dispose(), []);
+  const paint = (v) => { const el = canvasRef.current; if (el) { el.style.transform = "translate(" + v.x + "px," + v.y + "px) scale(" + v.z + ")"; layerHintRef.current.touch(el, v.z); } };
   const commit = useCallback(() => { commitTimerRef.current = null; setView({ ...viewRef.current }); }, []);
   const apply = useCallback((p, z) => {
     const v = { ...clamp(p, z), z }; viewRef.current = v; paint(v);
@@ -745,7 +752,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || flying} />
-        <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
+        <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0" }}>
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
