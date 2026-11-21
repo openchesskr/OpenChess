@@ -665,7 +665,9 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
     return steps.slice(a, si + 1).map((s, k) => ({ s, k: a + k }));
   }, [steps, si, step, finished]);
   const sceneEnd = useRef(null);
-  useEffect(() => { if (scene && sceneEnd.current) sceneEnd.current.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [si, scene]);
+  const choiceRef = useRef(null);
+  // 새 말풍선이 보이도록 아래로 — 질문이면 보기까지 보이도록 보기 목록 끝으로(휴대폰에서 보기가 화면 아래로 밀려나지 않게)
+  useEffect(() => { const el = step && step.kind === "choice" && choiceRef.current ? choiceRef.current : scene ? sceneEnd.current : null; if (el) el.scrollIntoView({ block: "end", behavior: "smooth" }); }, [si, scene]);   // eslint-disable-line react-hooks/exhaustive-deps
   const dialoguePanel = scene ? (
     <div aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: narrow ? 10 : 14 }}>
       {scene.map(({ s, k }, i) => {
@@ -677,7 +679,7 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
     </div>
   ) : null;
   const choicePanel = step && step.kind === "choice" && !finished ? (
-    <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+    <div ref={choiceRef} role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16, scrollMarginBottom: 12 }}>
       {step.options.map((o, i) => {
         const right = solved && i === step.answer, bad = picked === i && !solved;
         const bc = right ? th.hi : bad ? "#E0675C" : "rgba(255,255,255,.14)";
