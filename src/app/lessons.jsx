@@ -16,7 +16,8 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
-import { FacetDiamond, FacetCrown, GOLD as GOLD_FACET } from "../components/facetIcons.jsx";
+import { FacetDiamond, FacetCrown, GOLD as GOLD_FACET, facetRamp } from "../components/facetIcons.jsx";
+import { PieceIcon, BoardIcon } from "../components/pieceIcons.jsx";   // (v0.7.9) 새 파셋 기물·보드 아이콘
 import { noteLessonViewed } from "../lib/lessonPuzzles.js";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
@@ -38,11 +39,55 @@ const stageNo = (id) => STAGES.findIndex((s) => s.id === id) + 1;
 const CHECKER = { backgroundImage: "repeating-conic-gradient(rgba(255,255,255,.035) 0 25%, transparent 0 50%)", backgroundSize: "64px 64px",
   WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 80%)", maskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 80%)" };
 
-const pieceImg = (set, p, color = "w") => { const s = (PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[p]; return s && s[color] ? s[color].src : ""; };
-function LessonIcon({ icon, size, color }) {
-  if (String(icon).startsWith("piece:")) return <img src={pieceImg("classic", icon.slice(6), "w")} alt="" draggable={false} style={{ width: size * 1.3, height: size * 1.3, objectFit: "contain", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }} />;
-  const I = LESSON_ICONS[icon] || Circle;
-  return <I size={size} strokeWidth={2.2} color={color} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.3))" }} />;
+const pieceImg = (set, p, color = "w") => { const s = (PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[p]; return s && s[color] ? s[color].src : ""; };   // 오프닝 띠·단계 배경의 실제 보드 기물 그림
+// (v0.7.9, 사용자 요청) 레슨 아이콘 = 새 파셋 기물(또는 8×8 보드) + 오른쪽 아래 개념 배지(OpenChess 파셋 아이콘 세트). [기물, 배지]
+//  기물은 그 레슨의 주인공(전술을 거는 기물·지켜야 할 킹 등), 배지는 개념(체크=번개, 핀=핀, 포크=갈래 …). 배지가 없으면 기물만.
+export const LESSON_GLYPH = {
+  b_board: ["board"], b_rook: ["R"], b_bishop: ["B"], b_queen: ["Q"], b_knight: ["N"], b_pawn: ["P"], b_king: ["K"],
+  r_check: ["K", "Zap"], r_mate: ["K", "Crown"], r_stalemate: ["K", "Scale"], r_castle: ["K", "ArrowRightLeft"], r_enpassant: ["P", "MoveDiagonal"], r_promotion: ["P", "ChevronsUp"],
+  r_draws: ["K", "Handshake"], r_notation: ["board", "FileText"], r_values: ["Q", "Coins"], o_center: ["board", "Target"], o_develop: ["N", "Rocket"], o_safety: ["K", "Shield"], o_tempo: ["N", "Clock"],
+  g_protect: ["B", "Shield"], g_candidate: ["N", "ListChecks"], g_threat: ["Q", "Brain"], t_counting: ["R", "Coins"], g_trade: ["B", "RefreshCw"], g_activity: ["N", "TrendingUp"], g_rooks: ["R", "Route"],
+  i_twice: ["N", "Repeat2"], i_earlyqueen: ["Q", "Flame"], i_kingpawns: ["P", "Lock"], i_passive: ["B", "Undo2"], st_badbishop: ["B", "Scale"], st_doubled: ["P", "ArrowUpDown"], st_isolated: ["P", "Target"],
+  t_hanging: ["N", "HandCoins"], x_ignore: ["K", "EyeOff"], x_scholar: ["Q", "Timer"], x_f7: ["P", "Crosshair"], x_greedy: ["Q", "Gem"], x_recapture: ["P", "Shuffle"], o_trap: ["K", "ShieldAlert"],
+  z_foolsmate: ["K", "Ban"], m_backrank: ["R", "PanelBottom"], t_trapped: ["B", "Square"], z_queenhang: ["Q", "ShieldAlert"], z_forksq: ["N", "Swords"], z_stalemate: ["K", "Hourglass"], z_holes: ["P", "ScanLine"],
+  n_free: ["R", "Star"], n_mate1: ["Q", "Trophy"], n_checks: ["K", "Sparkles"], n_punish: ["N", "Sword"], n_promo: ["P", "ChevronsUp"],
+  t_fork: ["N", "GitFork"], t_pin: ["B", "Pin"], t_skewer: ["R", "ArrowRightLeft"], t_discovered: ["B", "Eye"], t_double: ["Q", "Zap"], t_removal: ["N", "Target"], t_doublecheck: ["R", "Zap"],
+  t_decoy: ["Q", "Compass"], t_deflection: ["R", "ArrowRight"], t_overload: ["Q", "Medal"], t_intermezzo: ["N", "Pause"], t_xray: ["R", "Sun"], t_interference: ["B", "Scissors"],
+  st_openfile: ["R", "Rows3"], st_seventh: ["R", "ChevronsUp"], st_outpost: ["N", "Shield"], st_passed: ["P", "Rocket"], st_space: ["P", "Maximize2"], st_goodtrade: ["B", "RefreshCw"], st_prophylaxis: ["K", "ShieldCheck"], st_kingattack: ["P", "Flag"],
+  m_queen: ["Q", "Crown"], m_ladder: ["R", "Rows3"], e_rookmate: ["R", "Flag"], e_square: ["P", "Square"], e_opposition: ["K", "ArrowUpDown"], e_keysquare: ["K", "Target"], e_activeking: ["K", "TrendingUp"],
+  e_rookbehind: ["R", "Route"], e_cutoff: ["R", "PanelBottom"], e_promote: ["P", "Crown"], e_lucena: ["R", "Bookmark"], e_philidor: ["R", "BookMarked"], e_perpetual: ["Q", "RotateCw"],
+  m_smothered: ["N", "Crown"], m_arabian: ["R", "Crown"], m_h7: ["Q", "Target"], m_corridor: ["R", "ArrowRightLeft"], m_boden: ["B", "MoveDiagonal"], m_epaulette: ["Q", "Shield"], m_anastasia: ["N", "Flag"],
+  t_breakthrough: ["P", "Rocket"], b_greek: ["B", "Gem"], b_legal: ["N", "Lightbulb"], b_queensac: ["Q", "Heart"], b_exchsac: ["R", "Trophy"],
+};
+// 배지 바탕: 원을 대각선으로 두 면(왼쪽 위 밝게) — 단계 색
+function GlyphChip({ size, th }) {
+  const R = facetRamp(th.c);   // 단계 색의 6단계 ramp에서만
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ position: "absolute", inset: 0 }}>
+      <path d="M12 1 A11 11 0 0 0 4.22 19.78 L19.78 4.22 A11 11 0 0 0 12 1Z" fill={R.l2} />
+      <path d="M4.22 19.78 A11 11 0 0 0 19.78 4.22Z" fill={R.base} />
+      <path d="M6.4 5.6 L9.2 3.9 L8.2 6.6Z" fill={R.hi} />
+    </svg>
+  );
+}
+function LessonIcon({ lesson, icon, size, th }) {
+  const g = lesson && LESSON_GLYPH[lesson.id];
+  if (!g) {   // 새 레슨에 그림을 아직 안 정했으면 예전처럼 아이콘 하나
+    const I = LESSON_ICONS[icon] || Circle;
+    return <I size={size * 0.62} color="#FFFFFF" />;
+  }
+  const [base, badge] = g, B = badge ? LESSON_ICONS[badge] : null, chip = size * 0.54;
+  return (
+    <span aria-hidden="true" style={{ position: "relative", width: size, height: size, display: "inline-block", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>
+      {base === "board" ? <BoardIcon size={size} /> : <PieceIcon type={base} size={size} color="w" />}
+      {B && th && (
+        <span style={{ position: "absolute", right: -chip * 0.28, bottom: -chip * 0.08, width: chip, height: chip, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <GlyphChip size={chip} th={th} />
+          <span style={{ position: "relative", display: "flex" }}><B size={chip * 0.58} color="#FFFFFF" /></span>
+        </span>
+      )}
+    </span>
+  );
 }
 /** 수 등급 배지(원 + 흰 글리프) — 단계의 상징. */
 export function GradeBadge({ stage, size = 36, glow = false }) {
@@ -214,7 +259,7 @@ function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
         boxShadow: locked ? "inset 0 0 0 1.5px rgba(255,255,255,.12)" : "inset 0 2px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.18)" }} />
       <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
         {lesson.motif ? <TileName name={lesson.title()} size={size} locked={locked} edge={th.edge} />
-          : locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
+          : locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon lesson={lesson} icon={lesson.icon} size={size * 0.52} th={th} />}
       </span>
       {/* (v0.7.8, 사용자 요청) 완료 체크는 마름모 위쪽 꼭짓점에 — 높이는 그대로 두고 가로만 가운데로 */}
       {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, left: "50%", marginLeft: -10, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
