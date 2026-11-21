@@ -6332,4 +6332,6 @@ export default {
   "댓글 {0}개 더보기": "Show {0} more {0|comment|comments}",
   "추천 대국": "Featured games",
   "이 수에 댓글 {0}개 작성함(최대 {1}개). 댓글의 ⋮ 메뉴에서 수정·삭제 가능": "{0} {0|comment|comments} written on this move (max {1}). Edit or delete from the comment's ⋮ menu",
+  // (v0.7.9) 일반 대국 설정 화면 소개 카드
+  "실시간 상대 또는 봇과 한 판. 시간 분류별 레이팅 반영": "One game against a live opponent or a bot. Ratings tracked per time category",
 };

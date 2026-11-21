@@ -19,7 +19,7 @@ import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { kindOfPost, isSaved } from "../lib/legacyPosts.js";
 import { LegacyActionsCtx } from "./legacyFeed.jsx";
 import { LegacyFrame } from "../components/legacyFrame.jsx";
-import { PuzzleThemeBackdrop, puzzleBackdropTheme, puzzleBackdropBg, PUZZLE_MEDIA_RATIO } from "../components/puzzleThemeBackdrop.jsx";
+import { POST_BG, PuzzlePostBackdrop, LegacyPostBackdrop, GamePostBackdrop } from "../components/postBackdrops.jsx";   // (v0.7.9) 퍼즐·유산·대국별 배경(테마별 효과 대신)
 import { legacyLikeToggle } from "./profile.jsx";
 import { mixFeed, FEED_KINDS } from "../lib/socialMix.js";
 import { t, fmtDateOnly } from "../lib/i18n.js";
@@ -28,6 +28,11 @@ const PAGE = 10;
 const INK = "#2A1B0E", SOFT = "#7A6648", LINE = "#D6C29A";
 const THEME_LABEL = () => Object.fromEntries(PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]));   // (v0.7.7) 테마 목록 공용
 const fmtDate = (ms) => (ms ? fmtDateOnly(ms, { year: "numeric", month: "2-digit", day: "2-digit" }) : "");
+// (v0.7.9, 사용자 요청) 생성자 정보가 없는 게시물의 생성자는 openchesskr, 날짜 정보가 없는 게시물의 날짜는 오늘 — 서버 데이터는 supabase-setup.sql 백필·
+// 앱의 stampMissingSavedAt이 채우고, 그래도 비어 있으면(서버에 안 올라간 퍼즐·옛 응답) 화면에서 같은 값으로 보인다.
+export const DEFAULT_CREATOR = "openchesskr";
+const dateOrToday = (ms) => fmtDate(ms || Date.now());
+const PUZZLE_MEDIA_RATIO = "100 / 112";   // 게시물 미디어 칸 — 정사각형보다 위아래로 조금 길게(예전 puzzleThemeBackdrop.jsx에서 옮김)
 
 /* 서버 응답 한 줄 → 유산 게시물 { owner, id, entry, kind, likes, reposts, at, ownerInfo } (모양이 틀리면 null). 피드·프로필 소셜 섹션이 같이 쓴다. */
 export function legacyItemFrom(x, owners, at) {
@@ -239,7 +244,8 @@ function KwBox({ label, color = SOFT, title }) {
   return <span title={title} style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", borderRadius: 5, border: "1px solid " + color + "88", background: color + "1a", color, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{label}</span>;
 }
 // 게시물 미디어 칸 — 보드를 칸 폭의 POST_BOARD_FRAC로 줄여 가운데에, 칸은 PUZZLE_MEDIA_RATIO(위아래로 조금 길게). bg·backdrop: 보드 뒤 배경
-const POST_BOARD_FRAC = 0.6;
+// (v0.7.9, 사용자 요청 "보드 크기를 75% 정도 키울 것") 0.6 → 0.8 — 면적 1.78배. 폭 1.75배(1.05)는 칸을 넘어, 면적 기준으로 키우고 둘레에 종류별 배경 효과가 보일 여백을 남긴다.
+const POST_BOARD_FRAC = 0.8;
 function PostMedia({ bg, backdrop, children }) {
   return (
     <div style={{ position: "relative", width: "100%", aspectRatio: PUZZLE_MEDIA_RATIO, background: bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -264,7 +270,9 @@ function requestCreatedAt(no) {
 function usePuzzleCreatedAt(p) {
   const no = puzzleNo(p.id), [, bump] = useState(0);
   useEffect(() => { const f = () => bump((x) => x + 1); createdSubs.add(f); requestCreatedAt(no); return () => { createdSubs.delete(f); }; }, [no]);
-  return p.createdAt || createdAtCache.get(no) || null;
+  if (p.createdAt) return p.createdAt;
+  // (v0.7.9) undefined = 아직 서버에 묻는 중(날짜 칸을 비워 둔다), null = 서버에도 없음(오늘 날짜로 보인다)
+  return !SB_ON ? null : createdAtCache.has(no) ? createdAtCache.get(no) : undefined;
 }
 
 export function PuzzlePost({ p, creator, viewerName, onDelete, isSolved, onOpen, onOpenProfile, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
@@ -279,19 +287,19 @@ export function PuzzlePost({ p, creator, viewerName, onDelete, isSolved, onOpen,
   const themes = sortedThemesOf(p), labels = THEME_LABEL();
   const opening = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "";
   const solvers = solveCountText(solveCount, friendSolverNames);
+  creator = creator || DEFAULT_CREATOR;   // (v0.7.9) 생성자 정보가 없으면 openchesskr
   const photo = usePhotoOf(creator);
-  const bdTheme = puzzleBackdropTheme(themes);
   const createdAt = usePuzzleCreatedAt(p);
   const phase = useMemo(() => puzzlePhase(p), [p.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   // 키워드 박스: 포지션 단계 → 테마들(# 없이 박스)
   const keywords = [phase ? { label: GAME_PHASE_LABEL[phase], color: "#1B4C86", title: t("{0} 포지션에서 시작", GAME_PHASE_LABEL[phase]) } : null, ...themes.map((k) => ({ label: labels[k] || k, color: themeAccentColor([k]) }))];
   return (
-    <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen} date={fmtDate(createdAt)} keywords={keywords}
+    <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen} date={createdAt === undefined ? "" : dateOrToday(createdAt)} keywords={keywords}
       head={<PostHead username={creator} photo={photo} kindLabel={t("퍼즐")} detail={opening} onOpenProfile={onOpenProfile}
         menu={<PostMenu isMine={!!viewerName && creator === viewerName} postKey={"p:" + p.id} targetName={creator} resolveTargetUid={() => uidOfUsername(creator)} refLabel={t("퍼즐 #{0}", puzzleNo(p.id))} onDelete={onDelete ? () => onDelete(p.id) : null} />}
         right={<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: themeAccentColor(themes), fontFamily: SITE_FONT }}><PuzzleIcon size={14} color={themeAccentColor(themes)} />#{puzzleNo(p.id)}</span>} />}
-      media={<PostMedia bg={puzzleBackdropBg(bdTheme)} backdrop={<PuzzleThemeBackdrop theme={bdTheme} />}>
-        {/* (v0.7.8, 사용자 요청) 유산처럼 보드를 줄이고 테마별 배경·애니메이션을 뒤에 깐다 */}
+      media={<PostMedia bg={POST_BG.puzzle} backdrop={<PuzzlePostBackdrop />}>
+        {/* (v0.7.9, 사용자 요청) 테마별 효과 대신 퍼즐 게시물 공통 배경(호두나무·체크 무늬·금빛 광택) */}
         <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", boxShadow: "0 10px 26px -10px rgba(0,0,0,.8)" }}>
           {hasPreview ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={w} loopMs={2400} flip={fenOnly ? fenOnly.turn === "w" : setupLen % 2 !== 0} fenRoot={fenOnly} />
             : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
@@ -315,20 +323,21 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   const { entry, kind, ownerInfo } = post;
   const info = postTypeInfo(kind);
   const isGame = kind === "game";   // (v0.7.7) 대국 게시물 — 마지막 수를 보여 주고, 캡션은 "백 vs 흑 · 결과"
-  const name = ownerInfo.username || "";   // (v0.7.6 사용자 요청) 닉네임 대신 아이디
+  const name = ownerInfo.username || DEFAULT_CREATOR;   // (v0.7.6 사용자 요청) 닉네임 대신 아이디. (v0.7.9) 없으면 openchesskr
   const before = useMemo(() => entry.sans.slice(0, entry.moveIndex), [entry]);
   const root = useMemo(() => legacyRootOf(entry), [entry]);
   const open = () => { if (ownerInfo.mid && A.openPost) A.openPost({ mid: ownerInfo.mid, id: post.id }); };
   const liked = A.liked.has(post.owner + "|" + post.id), reposted = A.isReposted(post), canRepost = A.canRepost(post);
   const cachedPhoto = usePhotoOf(ownerInfo.photo ? null : name);   // 서버가 사진을 함께 주지 않은 옛 응답 대비
   return (
-    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open} date={fmtDate(post.savedAt)}
+    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open} date={dateOrToday(post.savedAt)}
       keywords={isGame ? [{ label: t("대국"), color: "#2E5A8A" }, { label: t("{0}수", Math.ceil(entry.sans.length / 2)), color: SOFT }] : [info ? { label: info.label, color: T[info.kind] || "#2E5A8A" } : null, entry.opening ? { label: entry.opening.split(":")[0], color: "#8A6C2F", title: entry.opening } : null]}
       head={<PostHead menu={<PostMenu isMine={!!isOwn} postKey={"l:" + post.owner + ":" + post.id} targetName={name} resolveTargetUid={async () => post.owner} refLabel={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onDelete={isOwn && A.removeMine ? () => A.removeMine(post.id) : null} />} username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={isGame ? t("대국") : t("유산")} detail={isGame ? t("{0}수", Math.ceil(entry.sans.length / 2)) : info ? info.label : ""} onOpenProfile={onOpenProfile} right={postBadge(kind, 22)} />}
-      media={<PostMedia bg="linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)">
-        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다. (v0.7.8) 보드를 퍼즐과 같은 크기로 줄였다 */}
-        <div style={{ position: "relative", padding: 10 }}>
-          <LegacyFrame />
+      media={<PostMedia bg={isGame ? POST_BG.game : POST_BG.legacy} backdrop={isGame ? <GamePostBackdrop /> : <LegacyPostBackdrop accent={info && T[info.kind] ? T[info.kind] : undefined} />}>
+        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다. (v0.7.8) 보드를 퍼즐과 같은 크기로 줄였다.
+            (v0.7.9, 사용자 요청) 배경을 종류별로 — 유산: 별자리·윤곽선 브래킷(유산 재생처럼), 대국: 녹색 펠트·조명(액자 없이) */}
+        <div style={{ position: "relative", padding: isGame ? 0 : 10, ...(isGame ? { borderRadius: 6, boxShadow: "0 14px 30px -12px rgba(0,0,0,.85)" } : null) }}>
+          {!isGame && <LegacyFrame />}
           <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden" }}>
             <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={isGame ? null : kind} fenRoot={root} />
           </div>

@@ -3937,6 +3937,23 @@ end; $$;
 update public.puzzles set creator_username = null
  where creator_uid is null and creator_username is not null and creator_username <> ''
    and not exists (select 1 from public.profiles pr where pr.username = puzzles.creator_username);
+-- (v0.7.9, 사용자 요청) 생성자 정보가 없는 게시물의 생성자는 openchesskr로 — 작성자가 비었거나(탈퇴·자동 생성) 아이디가 빈 퍼즐을 개발자 계정으로 넘긴다.
+--  개발자 계정 프로필이 있을 때만(작성자 uid까지 채워 위의 정리 문장이 다시 비우지 않게). 몇 번 실행해도 결과가 같다.
+update public.puzzles pz set creator_uid = oc.id, creator_username = 'openchesskr'
+  from public.profiles oc
+ where oc.username = 'openchesskr' and pz.creator_uid is null and coalesce(pz.creator_username, '') = '';
+-- (v0.7.9, 사용자 요청) 날짜 정보가 없는 게시물(저장 시각 savedAt이 없는 옛 유산)의 날짜는 이 SQL을 실행한 날로 — 한 번 채우면 고정된다.
+--  앱도 불러올 때 같은 규칙으로 찍어 다시 공개한다(src/lib/legacyPosts.js stampMissingSavedAt). 퍼즐은 created_at이 not null default now()라 비지 않는다.
+update public.profiles pr
+   set pub = jsonb_set(pr.pub, '{legacies}', (
+     select jsonb_object_agg(e.key, case
+       when jsonb_typeof(e.value) = 'object' and coalesce(e.value ->> 'savedAt', '') !~ '^[1-9][0-9]{9,13}$'
+         then e.value || jsonb_build_object('savedAt', (extract(epoch from now()) * 1000)::bigint)
+       else e.value end)
+     from jsonb_each(pr.pub -> 'legacies') e))
+ where jsonb_typeof(pr.pub -> 'legacies') = 'object'
+   and exists (select 1 from jsonb_each(pr.pub -> 'legacies') e
+                where jsonb_typeof(e.value) = 'object' and coalesce(e.value ->> 'savedAt', '') !~ '^[1-9][0-9]{9,13}$');
 
 -- ============================================================================
 -- N+5) MID — (v0.5.7 BUG-029) 16-1) profiles_search_by_mid_prefix가 mid 컬럼을 쓰므로 그 앞(16-0)으로 옮겼다.
