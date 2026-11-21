@@ -87,6 +87,41 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.9 - 2026/11/21
+
+테마: 성능(첫 화면 번들·번역 분할), 학습 탭 전면 보강(두 코치 대화·질문 전 설명·지난 레슨 복습·연계·새 단계 "계산과 조합"·모든 레슨 고유 테마 퍼즐), 분석 탭 집중 분석 커뮤니티·댓글·전체 통계 재설계, 플레이·소셜·도감 다듬기. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`explorer_game_pgns` 표·`explorer_pgn_read/save`, 소셜 게시물 생성자·날짜 백필, `seedChapters` 새 레슨 5개).
+
+**성능**
+- 첫 화면 번들 분할(`src/app/lazyScreens.jsx`): 분석 탭 밖의 탭·리뷰·마스터·채팅·친구·설정 창을 처음 열 때 받고, 첫 화면 뒤 쉬는 시간에 미리 받는다. 미니게임 이름표(`playSpecialGames.jsx`)·유산 Context(`legacyCtx.js`)·레슨 id(`lessons/lessonIds.js`)를 가벼운 파일로 분리, 오프닝 스냅샷 SNAP은 `src/data/snapTree.js`(data-snap 청크), 퍼포먼스 레이팅 계산은 동적 import. 첫 화면 스크립트 gzip 996KB → 618KB, index 3,160KB → 1,293KB.
+- 번역 파일 분할(`scripts/lib/i18nSplit.mjs`): 빌드 때 지연 화면에서만 쓰는 문장을 rest로 떼어 `afterFullCatalog`로 그 화면을 열기 직전에 받는다. 영어 첫 화면 번역 750KB → 342KB 등 5개 언어 모두 절반 이하.
+
+**보안**
+- BUG-197(P1, 배포 전): 웹 검색 미리보기 서버가 주소 이름만 검사해 SSRF 가능 — `isPrivateIp` + `node:https`·`safeLookup`(DNS 응답 전부 검사, 검사한 IP로만 연결, 리디렉트마다 재검사).
+
+**기능**
+- 학습 탭 두 코치 대화(`app/lessons.jsx` `DialogueBubble`·`speakerOf`·`moodOf`): 보드 없는 설명은 말풍선을 아래로 쌓아 MILKU(왼쪽)·KOKOA(오른쪽)가 번갈아 말하고, 문장에 따라 표정(생각·놀람·기쁨)을 바꾼다.
+- 가르친 뒤 묻기(`lessons/curriculumTalk.js` `TEACH`): 객관식 질문 바로 앞에 그 개념을 설명하는 대화를 넣었다(75개 레슨). `check-lessons`가 설명 없이 묻는 질문을 막는다.
+- 레슨 연계: 모든 레슨이 지난 레슨 요약(제목·한 줄 요약) → 이어지는 설명(`LINK`, 137개 레슨) → 지난 레슨 복습 문제로 시작한다. 단계가 바뀌면 새 단계 소개. 대화 원본은 `scripts/lessonTalk/*.json`(대사 + 5개 언어), `scripts/build-lesson-talk.mjs`가 `curriculumTalkData.js`와 번역을 만든다.
+- 새 단계 "계산과 조합"(`lessons/curriculumCalc.js`, 우수한 수 + 파셋 조준경 배지): 2수 메이트·조용한 수·3수 메이트·내주고 메이트·메이트 위협 막기. 포지션은 마스터 대국 메이트 수순에서 첫 수가 유일한 것만. 12단계·138레슨.
+- 레슨 분량: 복습 문제를 같은 포지션 반복 대신 대칭 변형(좌우 반전·색 바꿈, `lessons/variants.js`)으로 최소 3문제, 본문 중복 포지션도 변형으로 교체, 연습 문제 보충(`curriculumPractice.js`). 모든 레슨 본문 예상 1분 이상(`lessons/duration.js`, `check-lessons`).
+- 추가 학습 퍼즐 은행(`scripts/build-lesson-puzzles.mjs` → `src/data/lessonPuzzleBank.json`, 767개): 모든 레슨의 고유 퍼즐 — 레슨 문제의 대칭 변형 + 메이트 패턴 레슨은 실제 마스터 대국의 같은 메이트, 오프닝은 주요 수순 문제. Lichess에 맞는 테마가 없는 레슨은 "OpenChess 고유 테마". 레슨 완료 화면에서 바로 풀기.
+- 분석 탭 집중 분석: 커뮤니티 블록을 댓글 위로, 구글 검색 결과식 미리보기(og:image·아이콘·사이트·게시일), 결과 6→10개. 댓글 블록 유튜브 댓글창 레이아웃. 전체 통계는 설명·쌓인 판수 삭제, 추천/최근 대국 섹션, 레이팅 숨김, 대국 행을 마스터·내 통계와 같게, Lichess 연결 대신 서버가 PGN을 검증해 `explorer_game_pgns`에 저장(`api/lichess.js?gpgn=1`).
+- 소셜 로그인: Supabase에 켜진 제공자만 버튼 표시(`src/lib/authProviders.js`, BUG-193), `SETUP_OAUTH.md` Apple Secret Key 6개월 만료·Facebook 절차 정정(BUG-194).
+
+**UI**
+- 파셋 기물 아이콘 6종 + 8×8 보드 아이콘(`components/pieceIcons.jsx`)으로 모든 레슨 아이콘을 기물 + 개념 배지 조합으로 재디자인, 도감 업적의 기물 엠블럼(카로칸·킹스 갬빗 등)·체크메이트·프로모션·나이트의 해 아이콘도 교체.
+- 도감 마스터·대회 상세 카드 재디자인(`components/dexCardKit.jsx`): 어두운 머리띠(종류별 엠블럼·이름·요약 칩), 핵심 수치 타일, 섹션·연도 알약 타임라인. 마스터 프로필(마스터 페이지 포함)도 같은 체계.
+- 플레이 탭: 미니게임 대전·로비·일반 대국 설정·인게임 데스크톱 2단, 에보니+금색 주 버튼, 매칭 카드, 허브 가운데 육각형 나이트 로고만.
+- 소셜 탭: 게시물 보드 폭 0.6 → 0.8, 퍼즐 테마별 효과 대신 종류별 배경(퍼즐·유산 별자리와 코너 브래킷·대국 펠트), 생성자 없으면 openchesskr·날짜 없으면 오늘.
+- 학습 탭 용어를 원문 발음으로(질식 메이트 → 스모더드 메이트 등 240여 문장, 인터피어런스·오퍼지션 통일).
+
+**버그 수정**
+- BUG-191(refresh-data SNAP 위치), BUG-193·194, BUG-195·196(배포 전), BUG-197(P1), BUG-198(도감 모식도 25% 배율 이동 시 깨짐 — 조작 중에만 will-change, `lib/layerHint.js`), BUG-199(추가 학습 스모더드 메이트 미표시 — 퍼즐 은행, 빈 응답 캐시 안 함, 다른 테마 Lichess 퍼즐 거름).
+
+**시스템**
+- prebuild 검사 추가·갱신: `check-bundle-split`, `check-bundle-size`(postbuild), `check-i18n-split`, `check-oauth-providers`, `check-web-search`, `check-lessons`(질문 전 설명·연계·복습·1분·12단계), `check-theme-puzzles`(퍼즐 은행), `check-masters-pan-perf`(BUG-198).
+- `package.json` 0.7.9, 새 문구 5개 언어 번역.
+
 ### OpenChess v0.7.8 - 2026/11/16
 
 테마: 학습 탭 전면 개편(수 등급 상징 11단계 레슨 트리·133개 레슨·테마 퍼즐 추가 학습·친구 진척도), 분석 탭 집중 분석 전체 통계·커뮤니티 블록, 소셜·플레이·도감·설정 탭 다듬기, /about 개편. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`seedChapters` 레슨 보상 46개 추가, `theme_puzzles` 표·`theme_puzzle_record`·`theme_puzzle_read`, `explorer_games` 축적, `puzzle_rating_leaderboard`, 플레이 퀘스트 장 잠금). **Vercel 환경변수**: `YOUTUBE_API_KEY`(영상), `TAVILY_API_KEY`(웹 검색) — Production과 Preview 범위 모두.

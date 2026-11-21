@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { Search, GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check, Settings, materialIcon } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Search, GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check, Settings, MessageCircle, Crosshair, materialIcon } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 
 import { t, tx, lang } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
@@ -8,6 +8,7 @@ import LangSwitch from "./components/LangSwitch.jsx";
 import { AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
 import { FacetDiamond, FacetCrown, GOLD, facetRamp } from "./components/facetIcons.jsx";
 import { QCOLOR } from "./lib/moveKinds.js";
+import { PieceIcon, PIECE_TYPES } from "./components/pieceIcons.jsx";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
@@ -480,44 +481,72 @@ const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27
 
 
 
-// (v0.7.8) 이번 버전(최신)의 핵심 — 학습 버전. 왼쪽 큰 카드에 수 등급 11단계 레슨 사다리(파셋 마름모, 마지막 단계는 금빛 왕관을 얹은 이론 수),
-//  오른쪽에 테마 퍼즐(미니 보드)·친구 진척도(프로필 스택), 아래 줄 전체에 집중 분석 커뮤니티. 장식은 모두 채운 면(CLAUDE.md 파셋 규칙).
-const LADDER = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "best", "only", "brilliant", "book"];
-function GradeLadder() {
-  const W = 520, H = 230, n = LADDER.length;
-  const pts = LADDER.map((g, i) => ({ g, x: 26 + i * ((W - 52) / (n - 1)), y: H - 34 - i * ((H - 80) / (n - 1)) - (i % 2 ? 12 : 0) }));
+// (v0.7.9) 이번 버전(최신)의 핵심 — "대화로 배우는 레슨" 버전. 왼쪽 큰 카드에 두 코치의 말풍선 대화가 차례로 쌓이는 데모,
+//  오른쪽에 새 단계 "계산과 조합"(수순 계단)·모든 레슨의 테마 퍼즐(새 파셋 기물 6종), 아래 줄 전체에 첫 화면 속도(전·후 막대)와 탭별 소식.
+//  장식은 모두 채운 면(CLAUDE.md 파셋 규칙). 코치 그림은 사이트 마스코트 이미지(/mascot).
+const TALK_DEMO = () => [
+  ["kokoa", "kokoa_happy", t("지난 레슨 「포크」, 기억나요?")],
+  ["milku", "milku_wink", t("핵심은 이 한 줄이었어요. 「두 기물을 한 번에」")],
+  ["kokoa", "kokoa_think", t("그럼 이번엔 한 줄 위의 두 기물을 묶는 거죠?")],
+  ["milku", "milku_great", t("맞아요. 이번 레슨은 「핀」입니다.")],
+];
+function TalkDemo() {
   return (
-    <svg viewBox={"0 0 " + W + " " + H} width="100%" style={{ display: "block", maxHeight: 240 }} aria-hidden="true">
-      {pts.slice(1).map((p, i) => { const q = pts[i]; const dx = p.x - q.x, dy = p.y - q.y, len = Math.hypot(dx, dy), nx = -dy / len * 1.6, ny = dx / len * 1.6;
-        return <polygon key={i} points={[q.x + nx, q.y + ny, p.x + nx * 0.4, p.y + ny * 0.4, p.x - nx * 0.4, p.y - ny * 0.4, q.x - nx, q.y - ny].join(" ")} fill="rgba(196,154,80,.32)" />; })}
-      {pts.map((p, i) => {
-        const last = i === n - 1, R = last ? GOLD : facetRamp(QCOLOR[p.g] || "#8FB55E"), r = last ? 19 : 14;
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 18 }}>
+      {TALK_DEMO().map(([who, img, text], i) => {
+        const k = who === "kokoa";
         return (
-          <motion.g key={i} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.4 }} transition={{ delay: i * 0.06, duration: 0.35 }} style={{ transformOrigin: p.x + "px " + p.y + "px" }}>
-            <FacetDiamond cx={p.x} cy={p.y} r={r} R={R} gem={last || p.g === "brilliant"} />
-            {last && <FacetCrown x={p.x} y={p.y - r - 7} s={18} R={GOLD} />}
-          </motion.g>
+          <motion.div key={i} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: 0.25 + i * 0.45, duration: 0.35 }}
+            style={{ display: "flex", flexDirection: k ? "row-reverse" : "row", alignItems: "flex-end", gap: 8 }}>
+            <img src={"/mascot/" + img + ".webp"} alt="" width={40} height={40} style={{ flexShrink: 0, objectFit: "contain" }} />
+            <span style={{ maxWidth: "78%", padding: "9px 13px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, borderRadius: k ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+              background: k ? "#3B2417" : "#F1E6D0", color: k ? "#FFE9CF" : "#2A1B0E", border: k ? "1px solid rgba(255,214,170,.22)" : "none" }}>{text}</span>
+          </motion.div>
         );
       })}
-    </svg>
+    </div>
   );
 }
-function MiniBoard() {
-  const sq = 22, hl = { 1: "rgba(235,198,99,.75)", 6: "rgba(143,181,94,.8)" };
+function CalcSteps() {
+  const R = facetRamp("#3E8C86"), steps = [t("2수 메이트"), t("조용한 수"), t("3수 메이트"), t("내주고 메이트"), t("메이트 위협 막기")];
   return (
-    <svg viewBox="0 0 88 88" width={88} height={88} aria-hidden="true" style={{ flexShrink: 0, borderRadius: 8 }}>
-      {Array.from({ length: 16 }, (_, k) => { const r = Math.floor(k / 4), c = k % 4; return <rect key={k} x={c * sq} y={r * sq} width={sq} height={sq} fill={hl[k] || ((r + c) % 2 ? "#7C4F2E" : "#E8D3AE")} />; })}
-      <FacetDiamond cx={sq * 2.5} cy={sq * 1.5} r={7} R={facetRamp("#8FB55E")} gem />
-    </svg>
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginTop: 14 }}>
+      {steps.map((s, i) => (
+        <motion.div key={i} title={s} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.08 }}
+          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <svg viewBox="0 0 30 30" width={26} height={26} aria-hidden="true"><FacetDiamond cx={15} cy={15} r={12} R={i === steps.length - 1 ? GOLD : R} gem={i === steps.length - 1} /></svg>
+          <span style={{ width: "100%", height: 10 + i * 9, background: "linear-gradient(180deg," + R.l2 + "," + R.base + ")", clipPath: "polygon(0 0,100% 0,100% 100%,0 100%)" }} />
+        </motion.div>
+      ))}
+    </div>
   );
 }
-function FriendDots() {
-  const fr = [["M", "#B07A2E"], ["K", "#5E8FB8"], ["J", "#8FB55E"]];
+function PieceRow() {
   return (
-    <div className="flex items-center" style={{ marginTop: 14 }}>
-      {fr.map(([ch, c], i) => <span key={ch} style={{ width: 34, height: 34, marginLeft: i ? -10 : 0, borderRadius: "50%", background: "linear-gradient(150deg," + c + ",#2A1B0E)", border: "2px solid #F1E6D0", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#F1E6D0", fontWeight: 900, fontSize: 13, zIndex: 3 - i }}>{ch}</span>)}
-      <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 900, color: T.ivoryHi }}>+2</span>
-      <svg viewBox="0 0 40 40" width={34} height={34} aria-hidden="true" style={{ marginLeft: 12 }}><FacetDiamond cx={20} cy={20} r={15} R={facetRamp(QCOLOR.good)} gem={false} /></svg>
+    <div className="flex items-end" style={{ gap: 4, marginTop: 14 }}>
+      {PIECE_TYPES.map((p, i) => (
+        <motion.span key={p} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.06 }}>
+          <PieceIcon type={p} size={30} color={i % 2 ? "gold" : "w"} />
+        </motion.span>
+      ))}
+      <span style={{ marginLeft: 8, fontFamily: "Georgia,serif", fontSize: 26, fontWeight: 900, color: "#A9C589", lineHeight: 1 }}>767</span>
+    </div>
+  );
+}
+function SpeedBars() {
+  const rows = [[t("이전"), 996, "#8A7A66"], ["v0.7.9", 618, "#6FA8DC"]];
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 14, maxWidth: 520 }}>
+      {rows.map(([label, kb, c], i) => (
+        <div key={i} className="flex items-center" style={{ gap: 10 }}>
+          <span style={{ width: 54, fontSize: 11, fontWeight: 800, color: T.inkSoft }}>{label}</span>
+          <div style={{ flex: 1, height: 12, background: "rgba(255,255,255,.06)" }}>
+            <motion.div initial={{ width: 0 }} whileInView={{ width: (kb / 996) * 100 + "%" }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.9, delay: i * 0.2, ease: [0.22, 0.9, 0.32, 1] }}
+              style={{ height: "100%", background: "linear-gradient(180deg," + c + "," + c + "AA)" }} />
+          </div>
+          <span style={{ width: 62, textAlign: "right", fontSize: 11.5, fontWeight: 900, color: T.ivoryHi, fontVariantNumeric: "tabular-nums" }}>{kb}KB</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -543,21 +572,21 @@ function WhatsNew({ version }) {
   const chip = (Icon, label, c) => <span key={label} className="inline-flex items-center" style={{ gap: 6, padding: "6px 12px", clipPath: octagon(6), background: c + "26", color: T.ivoryHi, fontSize: 12, fontWeight: 800 }}><Icon size={14} color={c} />{label}</span>;
   return (
     <section id="new" style={{ scrollMarginTop: 80 }}>
-      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 학습입니다")} desc={t("레슨 트리를 수 등급의 의미대로 다시 짰습니다. 배운 테마는 바로 퍼즐로 풀고, 친구가 어디까지 왔는지 레슨 경로에서 보입니다.")} />
+      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 대화로 배우는 레슨입니다")} desc={t("두 코치가 지난 레슨을 짚어 주고, 개념을 먼저 설명한 뒤 문제를 냅니다. 새 단계와 모든 레슨의 테마 퍼즐이 생겼고 첫 화면도 빨라졌습니다.")} />
       <div className="about-bento-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 14 }}>
-        <NewPanel i={0} span={2} rows={2} color={T.brassHi} Icon={GraduationCap} tag={t("레슨 트리")} title={t("수 등급이 곧 커리큘럼입니다")}
-          desc={t("이론 수는 규칙과 기초 이론, 블런더는 두면 안 되는 실수, 탁월한 수는 희생과 메이트 패턴입니다. 11단계 133개 레슨을 차례로 오르고, 마지막 단계에서 오프닝 레파토리를 배웁니다.")}>
-          <div style={{ marginTop: 16 }}><GradeLadder /></div>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".2em", color: T.brassHi, marginTop: 6 }}>{t("11단계 · 레슨 133개")}</div>
+        <NewPanel i={0} span={2} rows={2} color={T.brassHi} Icon={MessageCircle} tag={t("두 코치의 대화")} title={t("설명하고, 묻고, 이어 갑니다")}
+          desc={t("MILKU와 KOKOA가 말풍선을 주고받으며 지난 레슨을 요약하고, 문제를 내기 전에 그 개념을 먼저 설명합니다. 모든 레슨이 지난 레슨의 복습 문제로 시작합니다.")}>
+          <TalkDemo />
         </NewPanel>
-        <NewPanel i={1} color="#8FB55E" Icon={Puzzle} tag={t("테마 퍼즐")} title={t("배운 테마를 바로 풉니다")} desc={t("최근에 본 레슨의 테마에 맞는 퍼즐을 Lichess와 OpenChess 퍼즐에서 골라 그 자리에서 풉니다.")}>
-          <div style={{ marginTop: 14 }}><MiniBoard /></div>
+        <NewPanel i={1} color="#3E8C86" Icon={Crosshair} tag={t("새 단계")} title={t("계산과 조합")} desc={t("2수 메이트부터 메이트 위협 막기까지, 여러 수를 이어 읽는 다섯 레슨입니다.")}>
+          <CalcSteps />
         </NewPanel>
-        <NewPanel i={2} color="#6FA8DC" Icon={Users} tag={t("친구 진척도")} title={t("친구와 함께 오르는 길")} desc={t("친구가 지금 배우는 레슨 옆에 친구의 프로필 사진이 표시됩니다.")}>
-          <FriendDots />
+        <NewPanel i={2} color="#8FB55E" Icon={Puzzle} tag={t("테마 퍼즐")} title={t("모든 레슨에 추가 학습")} desc={t("레슨마다 고유 퍼즐이 있어, 레슨을 마치면 그 자리에서 바로 풉니다.")}>
+          <PieceRow />
         </NewPanel>
-        <NewPanel i={3} span={3} color="#D9736A" Icon={Compass} tag={t("집중 분석")} title={t("그 수를 다룬 글과 영상")} desc={t("집중 분석에서 그 수의 오프닝 이름으로 찾은 웹 문서와 YouTube 영상, Lichess 대국으로 모은 전체 통계를 함께 봅니다.")}>
-          <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>{chip(Search, t("웹 검색"), "#D9736A")}{chip(Play, "YouTube", "#E06B5B")}{chip(BarChart3, t("전체 통계"), T.brassHi)}</div>
+        <NewPanel i={3} span={3} color="#6FA8DC" Icon={Zap} tag={t("성능")} title={t("더 빨리 뜨는 첫 화면")} desc={t("처음 받는 파일을 크게 줄이고 번역 파일을 나눴습니다. 분석·플레이·소셜·도감 탭도 함께 다듬었습니다.")}>
+          <SpeedBars />
+          <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>{chip(Search, t("구글식 미리보기"), "#D9736A")}{chip(Play, t("유튜브식 댓글"), "#E06B5B")}{chip(Trophy, t("데스크톱 2단 대국"), T.brassHi)}{chip(Library, t("도감 카드 재디자인"), "#B98CFF")}</div>
         </NewPanel>
       </div>
     </section>
@@ -1032,8 +1061,8 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           lead={t("학습 탭은 레슨과 실수 복습, 테마 퍼즐을 모아 둔 곳입니다.")}
           shots={[{ n: "learn", cap: t("레슨") }, { n: "learn-2", cap: t("실수 복습과 테마 퍼즐") }]}
           blocks={[
-            [t("레슨"), t("수 등급의 의미대로 짠 11단계 133개 레슨을 하나씩 엽니다. 마지막 단계는 오프닝 레파토리이고, 친구가 배우는 레슨도 경로에 보입니다.")],
-            [t("실수 복습과 테마 퍼즐"), t("최근 대국에서 실수한 포지션을 다시 풀고, 최근에 본 레슨의 테마에 맞는 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.")],
+            [t("레슨"), t("수 등급의 의미대로 짠 12단계 138개 레슨을 하나씩 엽니다. 두 코치가 지난 레슨을 짚어 주고 개념을 설명한 뒤 문제를 내며, 친구가 배우는 레슨도 경로에 보입니다.")],
+            [t("실수 복습과 테마 퍼즐"), t("최근 대국에서 실수한 포지션을 다시 풀고, 모든 레슨에 있는 테마 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>
@@ -1132,6 +1161,46 @@ const CAT = {
   security: { label: t("보안"), Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.7.9", date: "2026.11.21",
+    summary: t("학습 탭 레슨이 두 코치의 대화와 지난 레슨 복습으로 이어지고, 새 단계 '계산과 조합'과 모든 레슨의 추가 학습 퍼즐이 생겼습니다. 첫 화면도 더 빨라졌습니다."),
+    highlight: { kind: "icon", Icon: GraduationCap, color: T.brassHi, label: t("두 코치가 대화로 가르치는 레슨 138개, 12단계.") },
+    sections: [
+      { cat: "feature", items: [
+        t("학습 탭 레슨에서 보드 없는 설명은 MILKU와 KOKOA 두 코치가 말풍선을 주고받는 대화로 나옵니다."),
+        t("레슨의 객관식 문제 앞에서 코치가 그 개념을 먼저 설명합니다."),
+        t("모든 레슨이 지난 레슨 요약과 복습 문제, 이번 레슨과 이어지는 설명으로 시작합니다."),
+        t("새 단계 '계산과 조합'이 생겼습니다. 2수 메이트, 조용한 수, 3수 메이트, 내주고 메이트, 메이트 위협 막기를 배웁니다."),
+        t("레슨이 더 길어졌습니다. 복습 문제가 같은 포지션을 반복하지 않고 모양을 바꾼 새 포지션으로 나옵니다."),
+        t("모든 레슨이 추가 학습 퍼즐을 가집니다. 레슨을 마치면 완료 화면에서 그 레슨의 테마 퍼즐을 바로 풉니다."),
+        t("분석 탭 집중 분석의 커뮤니티 블록이 구글 검색 결과처럼 미리보기 이미지와 함께 10개까지 보여 줍니다."),
+        t("집중 분석 댓글 블록을 유튜브 댓글창처럼 바꿨습니다."),
+        t("집중 분석 전체 통계를 추천 대국과 최근 대국으로 나누고, 대국을 OpenChess 안에서 바로 보고 리뷰합니다."),
+      ] },
+      { cat: "ui", items: [
+        t("체스 기물과 체스보드 아이콘을 새로 그리고, 레슨 아이콘과 도감 업적 아이콘을 다시 디자인했습니다."),
+        t("도감의 마스터와 대회 카드를 핵심 정보가 한눈에 보이게 다시 디자인했습니다."),
+        t("플레이 탭의 미니게임과 일반 대국 화면을 데스크톱에 맞는 2단 배치로 바꾸고 더 세련되게 다듬었습니다."),
+        t("소셜 탭 게시물의 체스보드를 키우고, 퍼즐, 유산, 대국마다 다른 배경을 씁니다."),
+        t("학습 탭의 체스 용어를 원문 발음으로 바꿨습니다. 예를 들어 질식 메이트는 스모더드 메이트가 되었습니다."),
+      ] },
+      { cat: "ux", items: [
+        t("소셜 게시물의 만든 사람이나 날짜가 비어 있으면 openchesskr과 오늘 날짜로 표시합니다."),
+      ] },
+      { cat: "perf", items: [
+        t("처음 접속할 때 받는 파일을 크게 줄여 첫 화면이 더 빨리 뜹니다."),
+        t("번역 파일을 나눠 한국어가 아닌 언어에서도 첫 화면이 더 빨리 뜹니다."),
+      ] },
+      { cat: "security", items: [
+        t("웹 검색 미리보기 서버의 보안을 강화했습니다."),
+      ] },
+      { cat: "fix", items: [
+        t("학습 탭 추가 학습에서 스모더드 메이트 같은 드문 테마의 퍼즐이 나오지 않던 문제를 고쳤습니다."),
+        t("도감 모식도를 25% 배율에서 움직이면 트리 일부가 깨져 보이던 문제를 고쳤습니다."),
+        t("설정하지 않은 로그인 방법의 버튼이 보이던 문제를 고쳤습니다."),
+      ] },
+    ],
+  },
   {
     version: "0.7.8", date: "2026.11.16",
     summary: t("학습 탭을 수 등급에 맞춘 11단계 레슨 트리로 다시 짜고 레슨을 133개로 늘렸습니다. 최근 본 레슨의 테마 퍼즐과 집중 분석의 전체 통계, 커뮤니티 블록이 생겼습니다."),
