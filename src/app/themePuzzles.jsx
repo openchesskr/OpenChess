@@ -14,7 +14,7 @@ import { LICHESS_API } from "../lib/lichessApi.js";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import { lessonById } from "../lib/lessons/curriculum.js";
 import { boardOf, turnOf, legalTargets, playMove, sqToRc, rcToSq } from "../lib/lessons/engine.js";
-import { loadRecentLessons, onRecentLessonsChange, recentThemeGroups, matchOcPuzzles, angleLabel, puzzleMoveOk } from "../lib/lessonPuzzles.js";
+import { loadRecentLessons, onRecentLessonsChange, recentThemeGroups, matchOcPuzzles, angleLabel, puzzleMoveOk, bankPuzzles, themeOf } from "../lib/lessonPuzzles.js";
 import { playSfx } from "../lib/prefs.js";
 import { t } from "../lib/i18n.js";
 
@@ -35,8 +35,13 @@ async function loadLichess(angles) {
   const r = await fetch(LICHESS_API + "?puzzles=1&n=6&angles=" + encodeURIComponent(key));
   if (!r.ok) throw new Error("tpz " + r.status);
   const j = await r.json(); const out = (j && j.puzzles) || {};
-  liCache.set(key, out); return out;
+  // (BUG-199) 빈 결과는 기억하지 않는다 — 예전엔 처음 한 번 비어 오면(저장소가 비었거나 Lichess 한도) 새로고침 전까지 그 테마가 계속 비었다.
+  if (Object.values(out).some((v) => Array.isArray(v) && v.length)) liCache.set(key, out);
+  return out;
 }
+// (v0.7.9, BUG-199) OpenChess 테마 퍼즐 은행 — 모든 레슨의 고유 퍼즐(앱에 들어 있어 네트워크 없이도 나온다). 처음 쓸 때 한 번 받는다.
+let bankPromise = null;
+const loadBank = () => (bankPromise ||= import("../data/lessonPuzzleBank.json").then((m) => m.default || m).catch(() => { bankPromise = null; return {}; }));
 
 function useRecent() {
   const [ids, setIds] = useState(loadRecentLessons);
@@ -45,26 +50,40 @@ function useRecent() {
 }
 
 function useThemePuzzles(groups) {
-  const [state, setState] = useState({ loading: false, byAngle: {}, error: false });
-  const key = groups.map((g) => g.angle + ":" + g.oc.join("+")).join("|");
+  const [state, setState] = useState({ loading: false, byLesson: {}, error: false });
+  const key = groups.map((g) => g.lessonId + ":" + g.angle + ":" + g.oc.join("+")).join("|");
   useEffect(() => {
-    if (!groups.length) { setState({ loading: false, byAngle: {}, error: false }); return undefined; }
+    if (!groups.length) { setState({ loading: false, byLesson: {}, error: false }); return undefined; }
     let alive = true;
     setState((s) => ({ ...s, loading: true }));
-    Promise.all([loadLichess(groups.map((g) => g.angle)).catch(() => null), loadOcRows()]).then(([li, rows]) => {
-      if (!alive) return;
-      const byAngle = {};
+    // 은행(즉시) → 화면을 먼저 채우고, Lichess·OpenChess 공개 퍼즐이 오면 뒤에 덧붙인다.
+    const fill = (bank, li, rows) => {
+      const byLesson = {};
       for (const g of groups) {
-        const oc = matchOcPuzzles(rows, { oc: g.oc }, 3);
+        const own = bankPuzzles(bank, g.lessonId);
+        const oc = rows ? matchOcPuzzles(rows, { oc: g.oc }, 3) : [];
         const lis = ((li && li[g.angle]) || []).map((p) => ({ id: "li" + p.id, lid: p.id, fen: p.fen, sol: p.sol, rating: p.rating, source: "lichess" }));
-        byAngle[g.angle] = [...oc, ...lis];
+        const seen = new Set(); byLesson[g.lessonId] = [...own, ...oc, ...lis].filter((p) => (seen.has(p.fen) ? false : (seen.add(p.fen), true)));
       }
-      setState({ loading: false, byAngle, error: !li });
+      return byLesson;
+    };
+    loadBank().then((bank) => {
+      if (!alive) return;
+      setState({ loading: true, byLesson: fill(bank, null, null), error: false });
+      const angles = [...new Set(groups.map((g) => g.angle))].slice(0, 4);
+      Promise.all([loadLichess(angles).catch(() => null), loadOcRows()]).then(([li, rows]) => {
+        if (alive) setState({ loading: false, byLesson: fill(bank, li, rows), error: !li });
+      });
     });
     return () => { alive = false; };
   }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
   return state;
 }
+// 묶음 이름: 정확히 맞는 Lichess 테마가 있으면 그 이름, 없으면 레슨 이름(OpenChess 고유 테마).
+const groupLabel = (g) => { const l = lessonById(g.lessonId); return g.own ? (l ? l.title() : g.lessonId) : angleLabel(g.angle); };
+const sourceLabel = (p) => (p.source === "lichess" ? "Lichess #" + p.lid
+  : p.source === "theme" ? (p.from && p.from.startsWith("g:") ? t("마스터 대국") + " · " + p.from.slice(2) : t("OpenChess 테마 퍼즐"))
+    : "OpenChess #" + p.no);
 
 /* ── 퍼즐 하나 풀기 ── */
 function PuzzleSolver({ p, onSolved, onNext }) {
@@ -85,7 +104,7 @@ function PuzzleSolver({ p, onSolved, onNext }) {
     const played = playMove(fen, fs, ts, expected && expected.from === fs && expected.to === ts ? expected.promotion : undefined);
     setSel(null);
     if (!played) return;
-    if (!puzzleMoveOk(fen, played.san, p.sol, i)) { setState("bad"); setWrongAt(to); setTimeout(() => setWrongAt(null), 700); return; }
+    if (!puzzleMoveOk(fen, played.san, p.sol, i, p.oks)) { setState("bad"); setWrongAt(to); setTimeout(() => setWrongAt(null), 700); return; }
     playSfx(played.mv.captured ? "capture" : "move");
     setFen(played.fen); setLastTo(to);
     const ni = i + 1;
@@ -131,7 +150,7 @@ function PuzzleSolver({ p, onSolved, onNext }) {
         {(state === "ok" || state === "shown" || state === "bad") && <button type="button" onClick={() => { clearTimeout(timer.current); setFen(p.fen); setI(0); setState("idle"); setLastTo(null); }} className="press" style={pill(false)}><RotateCcw size={14} />{t("다시 풀기")}</button>}
         <button type="button" onClick={onNext} className="press" style={pill(true)}>{t("다음 퍼즐")}<ChevronRight size={14} /></button>
         <span style={{ marginLeft: "auto", fontSize: 11, color: SOFT, fontWeight: 700 }}>
-          {p.source === "lichess" ? "Lichess #" + p.lid : "OpenChess #" + p.no}{p.rating ? " · " + p.rating : ""}
+          {sourceLabel(p)}{p.rating ? " · " + p.rating : ""}
         </span>
       </div>
     </div>
@@ -140,14 +159,18 @@ function PuzzleSolver({ p, onSolved, onNext }) {
 
 const pill = (on) => ({ display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 13px", borderRadius: 10, border: on ? "none" : "1px solid " + LINE, background: on ? T.ebony2 : "rgba(255,255,255,.55)", color: on ? T.brassHi : INK, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT });
 
-export function ThemePuzzles() {
+/** lessonId가 있으면 그 레슨의 테마만(레슨을 마친 화면) — 없으면 최근에 본 레슨 3개(학습 탭 오른쪽). */
+export function ThemePuzzles({ lessonId } = {}) {
   const recent = useRecent();
-  const groups = useMemo(() => recentThemeGroups(recent, lessonById, 3), [recent]);
-  const { loading, byAngle } = useThemePuzzles(groups);
+  const groups = useMemo(() => {
+    if (lessonId) { const l = lessonById(lessonId); const g = l ? themeOf(l) : null; return g ? [g] : []; }
+    return recentThemeGroups(recent, lessonById, 3);
+  }, [recent, lessonId]);
+  const { loading, byLesson } = useThemePuzzles(groups);
   const [gi, setGi] = useState(0), [pi, setPi] = useState(0), [solved, setSolved] = useState(() => new Set());
-  useEffect(() => { setGi(0); setPi(0); }, [groups.map((g) => g.angle).join()]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGi(0); setPi(0); }, [groups.map((g) => g.lessonId).join()]);   // eslint-disable-line react-hooks/exhaustive-deps
   const g = groups[Math.min(gi, groups.length - 1)] || null;
-  const list = (g && byAngle[g.angle]) || [];
+  const list = (g && byLesson[g.lessonId]) || [];
   const p = list.length ? list[pi % list.length] : null;
   const lesson = g ? lessonById(g.lessonId) : null;
   return (
@@ -169,15 +192,18 @@ export function ThemePuzzles() {
         ) : (
           <>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {groups.map((x, k) => { const on = x === g; const l = lessonById(x.lessonId); return (
-                <button key={x.angle} type="button" onClick={() => { setGi(k); setPi(0); }} className="press"
+              {groups.length > 1 && groups.map((x, k) => { const on = x === g; const l = lessonById(x.lessonId); return (
+                <button key={x.lessonId} type="button" onClick={() => { setGi(k); setPi(0); }} className="press"
                   style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, border: "1px solid " + (on ? STUDY_COLOR : LINE), background: on ? STUDY_COLOR : "rgba(255,255,255,.55)", color: on ? "#FBF3E3" : INK, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT, maxWidth: "100%" }}>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{angleLabel(x.angle)}</span>
-                  {l && l.title() !== angleLabel(x.angle) && <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{l.title()}</span>}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{groupLabel(x)}</span>
+                  {l && l.title() !== groupLabel(x) && <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{l.title()}</span>}
                 </button>
               ); })}
             </div>
-            {lesson && <div style={{ fontSize: 11.5, color: SOFT, lineHeight: 1.5 }}>{t("최근에 본 레슨 '{0}'의 테마로 고른 퍼즐", lesson.title())}</div>}
+            {lesson && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 11.5, color: SOFT, lineHeight: 1.5 }}>
+              {g.own && <span style={{ fontSize: 10, fontWeight: 800, color: "#FBF3E3", background: STUDY_COLOR, borderRadius: 999, padding: "1px 7px" }}>{t("OpenChess 고유 테마")}</span>}
+              <span>{lessonId ? t("레슨 '{0}'의 테마로 고른 퍼즐", lesson.title()) : t("최근에 본 레슨 '{0}'의 테마로 고른 퍼즐", lesson.title())}</span>
+            </div>}
             {p ? <PuzzleSolver key={p.id} p={p} onSolved={(id) => setSolved((s) => (s.has(id) ? s : new Set([...s, id])))} onNext={() => setPi((x) => x + 1)} />
               : <p style={{ margin: 0, fontSize: 13, color: SOFT }}>{loading ? t("퍼즐을 불러오는 중") : t("이 테마의 퍼즐을 아직 불러오지 못했습니다. 잠시 후 다시 열어 보세요.")}</p>}
             {list.length > 1 && (

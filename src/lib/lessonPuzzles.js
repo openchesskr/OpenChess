@@ -157,22 +157,40 @@ export function matchOcPuzzles(rows, theme, n = 4) {
   return out;
 }
 
-/** 최근 레슨들 → 퍼즐 묶음 목록 [{ lessonId, angle, oc }] — 같은 테마는 한 번만, 최대 max개. */
+// Lichess 테마 중 레슨 개념과 꼭 맞지 않는 넓은 테마 — 이런 레슨은 "OpenChess 고유 테마"(레슨 이름)로 보여 준다.
+const BROAD = new Set(["advantage", "crushing", "equality", "middlegame", "opening", "endgame", "defensiveMove", "short", "long", "mateIn1", "mateIn2", "mateIn3", "mate"]);
+/** (v0.7.9) 레슨의 추가 학습 테마 — { lessonId, angle(Lichess), oc, own(고유 테마 여부) }. 정확히 맞는 Lichess 테마가 없으면 own. */
+export function themeOf(lesson) {
+  const th = lessonTheme(lesson); if (!th) return null;
+  const angle = th.angles[0];
+  const own = !!lesson.motif || !BY_LESSON[lesson.id] || BROAD.has(angle) && !/mate/i.test(lesson.id);
+  return { lessonId: lesson.id, angle, oc: th.oc, own };
+}
+/** 최근 레슨들 → 퍼즐 묶음 목록 [{ lessonId, angle, oc, own }] — (v0.7.9) 레슨마다 하나(모든 레슨이 고유 퍼즐 은행을 가진다), 최대 max개. */
 export function recentThemeGroups(recentIds, lessonOf, max = 3) {
-  const out = [], seenAngle = new Set();
+  const out = [], seen = new Set();
   for (const id of recentIds || []) {
-    const l = lessonOf(id); const th = lessonTheme(l); if (!th) continue;
-    const angle = th.angles.find((a) => !seenAngle.has(a)); if (!angle) continue;
-    seenAngle.add(angle); out.push({ lessonId: id, angle, oc: th.oc });
+    if (seen.has(id)) continue;
+    const l = lessonOf(id); const g = l ? themeOf(l) : null; if (!g) continue;
+    seen.add(id); out.push(g);
     if (out.length >= max) break;
   }
   return out;
 }
 
-/** 풀이 판정: 학습자 수(SAN)가 정답 sol[i]와 같으면 정답. 마지막 수가 메이트면 다른 메이트 수도 정답. */
-export function puzzleMoveOk(fen, played, sol, i) {
+/** (v0.7.9) OpenChess 테마 퍼즐 은행(src/data/lessonPuzzleBank.json, scripts/build-lesson-puzzles.mjs)의 한 레슨 → 퍼즐 목록. */
+export function bankPuzzles(bank, lessonId) {
+  const rows = (bank && bank[lessonId]) || [];
+  return rows.map((r, k) => ({ id: "ob:" + lessonId + ":" + k, fen: r[0], sol: String(r[1]).split(" "), oks: Array.isArray(r[3]) ? r[3] : null, source: "theme", from: r[2] || "v", rating: null }));
+}
+
+/** 풀이 판정: 학습자 수(SAN)가 정답 sol[i]와 같으면 정답. 마지막 수가 메이트면 다른 메이트 수도 정답.
+ *  (v0.7.9) oks: 학습자 수마다 받아 주는 SAN 목록(은행 퍼즐 — 목표가 "체크하기"처럼 정답이 여럿인 문제). 학습자 수는 sol의 짝수 번째. */
+export function puzzleMoveOk(fen, played, sol, i, oks) {
   const strip = (s) => String(s || "").replace(/[+#!?]/g, "");
   if (strip(played) === strip(sol[i])) return true;
+  const alt = oks && oks[Math.floor(i / 2)];
+  if (Array.isArray(alt) && alt.some((x) => strip(x) === strip(played))) return true;
   if (i === sol.length - 1) { try { const c = new Chess(fen); return !!c.move(played) && c.isCheckmate(); } catch { return false; } }
   return false;
 }

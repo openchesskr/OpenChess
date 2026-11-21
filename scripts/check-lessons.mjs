@@ -89,7 +89,7 @@ for (const l of lessons) { const n = l.steps().length, min = l.stage === REPERTO
 if (lessons.length < 130) fails.push("레슨 수가 줄었음: " + lessons.length + "개(130개 이상이어야 함)");
 // 오프닝 레슨: 수마다 설명이 있고(MEC 또는 보충), 이름 맞히기 보기가 서로 다르며 정답이 그 오프닝 이름이다
 for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
-  const st = l.steps(), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");
+  const st = l.steps().filter((x) => !x.recap), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");   // (v0.7.9) 맨 앞 복습 문제(recap)는 지난 레슨 것
   if (!mv || !ch) { fails.push(l.id + ": 오프닝 레슨에 수 두기·이름 맞히기 스텝이 없음"); continue; }
   mv.line.forEach((g, j) => { if (!g.hint) fails.push(l.id + " 목표" + (j + 1) + ": 힌트 없음"); if (g.say.includes(t("이 오프닝의 다음 수를 두세요."))) fails.push(l.id + " 목표" + (j + 1) + ": MEC 설명이 없는 수 — 수순을 바꾸거나 보충 설명을 넣을 것"); });
   if (new Set(ch.options).size !== ch.options.length) fails.push(l.id + ": 이름 보기 중복");

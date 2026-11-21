@@ -2,6 +2,9 @@
 //  레슨 id는 서버 코인 보상(economy_claim_chapter의 seedChapters)과 같아야 한다 — 바꾸면 supabase-setup.sql도 함께(check-lessons가 대조).
 //  스텝 형식은 engine.js 머리말. 모든 포지션·정답은 scripts/check-lessons.mjs가 chess.js로 검증한다(합법·정답이 목표를 만족·힌트가 정답).
 import { t } from "../i18n.js";
+import { variantsOf, variantMoveStep } from "./variants.js";
+import { recapSteps, withTeach } from "./curriculumTalk.js";
+import { PRACTICE } from "./curriculumPractice.js";
 import { Chess } from "chess.js";
 import { openingFamily, openingIdeaAt } from "../mecOpenings.js";
 import { MORE_LESSONS, MORE_EXTRA } from "./curriculumMore.js";
@@ -697,10 +700,34 @@ for (const [id, extra] of Object.entries({
 // (v0.7.8, 사용자 요청 "레슨 길이") 기존 레슨 끝에 붙는 확인 문제(curriculumMore.js MORE_EXTRA)
 for (const [id, fn] of Object.entries(MORE_EXTRA)) { const prev = EXTRA[id]; EXTRA[id] = prev ? () => [...prev(), ...fn()] : fn; }
 /** (v0.7.8) 레슨 끝의 복습 — 그 레슨의 수 두기 스텝을 코치 설명 없이 한 번 더 둔다(오프닝 레슨은 자체 복습이 있어 제외). */
-function withReview(steps) {
+// (v0.7.9, 사용자 요청) 복습은 같은 포지션을 되풀이하지 않는다 — 레슨 문제의 대칭 변형(좌우 반전·색 바꿈, lessons/variants.js)으로 낸다.
+//  문제마다 변형 하나씩, 모자라면 다른 변형을 더해 복습 문제가 최소 REVIEW_MIN개가 되게 한다(변형이 없는 문제는 원래 포지션 그대로).
+const REVIEW_MIN = 3;
+// 본문에서 같은 포지션·같은 목표의 문제가 다시 나오면 좌우 반전(색은 그대로)한 변형으로 바꾼다 — 안내 문장이 칸 이름을 말하면 그대로 둔다.
+const SQUARE_REF = /(^|[^A-Za-z])[a-h][1-8]/;
+function dedupeMoves(steps) {
+  const seen = new Set();
+  return steps.map((s) => {
+    if (s.kind !== "move") return s;
+    const key = s.fen + "|" + JSON.stringify((s.line || []).map((g) => g.goal));
+    if (!seen.has(key)) { seen.add(key); return s; }
+    // 복습·"다시 두어 보세요"처럼 설명 없는 스텝이면 색을 바꾼 변형도 쓰고, 칸 이름을 말하는 수 안내는 일반 문장으로 바꾼다.
+    const say = s.say || "", colorRef = /백|흑/.test(say);
+    const cands = s.review ? variantsOf(s) : SQUARE_REF.test(say) ? [] : (colorRef ? [variantMoveStep(s, "m")] : variantsOf(s)).filter(Boolean);
+    const v = cands.find((x) => !seen.has(x.fen + "|" + JSON.stringify(x.line.map((g) => g.goal))));
+    if (!v) return s;
+    seen.add(v.fen + "|" + JSON.stringify(v.line.map((g) => g.goal)));
+    return { ...v, line: v.line.map((g) => ({ ...g, say: g.say && SQUARE_REF.test(g.say) ? t("설명 없이 다음 수를 두세요.") : g.say })) };
+  });
+}
+function withReview(raw) {
+  const steps = dedupeMoves(raw);
   const moves = steps.filter((s) => s.kind === "move" && !s.review);
   if (!moves.length) return steps;
-  const rev = moves.map((s, i) => ({ ...s, review: true, say: i === 0 ? t("이번에는 설명 없이 이 레슨의 문제를 다시 풀어 보세요.") : t("설명 없이 다음 문제를 푸세요."),
+  const vars = moves.map((s) => variantsOf(s));
+  const target = Math.max(REVIEW_MIN, moves.length), picked = moves.map((s, i) => vars[i][0] || s);
+  for (let round = 1; round < 3; round++) moves.forEach((s, i) => { if (picked.length < target && vars[i][round]) picked.push(vars[i][round]); });
+  const rev = picked.map((s, i) => ({ ...s, review: true, say: i === 0 ? t("이번에는 설명 없이 이 레슨의 문제를 다시 풀어 보세요.") : t("설명 없이 다음 문제를 푸세요."),
     line: s.line.map((g) => ({ ...g, say: g.say ? t("설명 없이 다음 수를 두세요.") : undefined })) }));
   return [...steps, ...rev];
 }
@@ -718,10 +745,18 @@ export function allLessons() {
   }
   // (v0.7.7) EXTRA: 기존 레슨에 덧붙인 연습·확인 문제 · (v0.7.8) 오프닝이 아닌 기존 레슨은 끝에 설명 없는 복습(새 레슨은 각자 복습 스텝이 있다)
   const isNew = new Set(MORE_LESSONS.map((l) => l.id));
+  // (v0.7.9) 대화 층(curriculumTalk.js): 질문 앞 설명(TEACH)을 본문에 끼우고, 맨 앞에 지난 레슨 요약·연결·복습 문제(recap)를 붙인다.
+  //  body(): 대화 층 전 본문(+복습) — 다음 레슨이 복습 문제를 고를 때 쓴다. steps(): 화면이 쓰는 전체. 둘 다 처음 부를 때 한 번 만든다.
+  const memo = (f) => { let v = null; return () => v || (v = f()); };
   _cache = seq.map(({ l, stage }, i) => {
-    const base = EXTRA[l.id] ? () => [...l.steps(), ...EXTRA[l.id]()] : l.steps;
-    return { id: l.id, stage, icon: l.icon, motif: l.motif || null, line: l.line || null, side: l.side || null, index: i, title: l.title, sub: l.sub,
-      steps: l.motif || isNew.has(l.id) ? base : () => withReview(base()) };
+    const more = [...(EXTRA[l.id] ? EXTRA[l.id]() : [])], pr = PRACTICE[l.id];
+    const base = () => [...l.steps(), ...more, ...(pr ? pr() : [])];
+    const body = memo(() => withTeach(l.id, l.motif ? base() : isNew.has(l.id) ? dedupeMoves(base()) : withReview(base())));
+    return { id: l.id, stage, icon: l.icon, motif: l.motif || null, line: l.line || null, side: l.side || null, index: i, title: l.title, sub: l.sub, body };
+  });
+  _cache.forEach((L, i) => {
+    const prev = _cache[i - 1] || null, newStage = !prev || prev.stage !== L.stage ? stageOf(L.stage) : null;
+    L.steps = () => [...recapSteps(L, prev, prev ? prev.body() : null, newStage), ...L.body()];
   });
   return _cache;
 }

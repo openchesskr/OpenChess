@@ -50,11 +50,15 @@ export function parseLichessPuzzle(j) {
   } catch { return null; }
 }
 
-/** 화면 값: 쌓인 퍼즐 + 새로 받은 퍼즐을 id로 합쳐 n개. */
-export function mergePuzzles(stored, fresh, n = 8) {
+/** (BUG-199) Lichess가 준 퍼즐이 요청한 테마를 정말 갖는가 — 테마 정보가 없거나 다른 테마면 그 묶음에 넣지 않는다
+ *  (로그인하지 않은 요청에 Lichess가 테마와 무관한 퍼즐을 줄 수 있어, 예전엔 엉뚱한 퍼즐이 "스모더드 메이트"로 쌓일 수 있었다). */
+export const hasTheme = (p, angle) => !!p && Array.isArray(p.themes) && p.themes.includes(angle);
+/** 화면 값: 쌓인 퍼즐 + 새로 받은 퍼즐을 id로 합쳐 n개. angle을 주면 그 테마를 가진 퍼즐만. */
+export function mergePuzzles(stored, fresh, n = 8, angle = null) {
   const seen = new Set(), out = [];
   for (const p of [...(fresh || []), ...((stored && stored.puzzles) || [])]) {
     if (!p || !p.id || seen.has(p.id) || !Array.isArray(p.sol) || typeof p.fen !== "string") continue;
+    if (angle && !hasTheme(p, angle)) continue;
     seen.add(p.id); out.push({ id: p.id, fen: p.fen, sol: p.sol, rating: p.rating == null ? null : p.rating, themes: Array.isArray(p.themes) ? p.themes : [] });
     if (out.length >= n) break;
   }
@@ -86,13 +90,14 @@ export async function themePuzzlesHandler(req, res) {
           const up = await fetch("https://lichess.org/api/puzzle/next?angle=" + encodeURIComponent(angle), { headers: { "User-Agent": "openchess-theme-puzzles/1.0", Accept: "application/json" } });
           if (!up.ok) break;
           const p = parseLichessPuzzle(await up.json());
-          if (p && !fresh.some((x) => x.id === p.id)) fresh.push(p);
+          if (p && hasTheme(p, angle) && !fresh.some((x) => x.id === p.id)) fresh.push(p);
         } catch { break; }
       }
       if (fresh.length && env) { try { await rpc(env, "theme_puzzle_record", { p_theme: angle, p_puzzles: fresh }); } catch { /* 쌓기 실패 — 응답은 그대로 */ } }
     }
-    result[angle] = mergePuzzles(stored, fresh, n);
+    result[angle] = mergePuzzles(stored, fresh, n, angle);
   }
-  res.setHeader("Cache-Control", "public, max-age=30, s-maxage=120");
+  // (BUG-199) 빈 묶음이 있으면 CDN에 오래 남기지 않는다(예전엔 빈 응답이 2분 동안 모두에게 그대로 나갔다)
+  res.setHeader("Cache-Control", Object.values(result).some((v) => !v.length) ? "no-store" : "public, max-age=30, s-maxage=120");
   res.status(200).json({ puzzles: result });
 }

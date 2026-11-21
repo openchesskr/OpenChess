@@ -7,7 +7,7 @@
  *  실행: node scripts/check-theme-puzzles.mjs (prebuild로 자동 실행) */
 import { Chess } from "chess.js";
 import { allLessons, lessonById } from "../src/lib/lessons/curriculum.js";
-import { lessonTheme, angleLabel, ANGLE_LABEL_KEYS, LESSON_THEME_IDS, mateShape, ocPuzzleInfo, matchOcPuzzles, recentThemeGroups, puzzleMoveOk, pushRecent, RECENT_MAX } from "../src/lib/lessonPuzzles.js";
+import { lessonTheme, angleLabel, ANGLE_LABEL_KEYS, LESSON_THEME_IDS, mateShape, ocPuzzleInfo, matchOcPuzzles, recentThemeGroups, puzzleMoveOk, bankPuzzles, pushRecent, RECENT_MAX } from "../src/lib/lessonPuzzles.js";
 import { LICHESS_ANGLES, parseAngles, parseLichessPuzzle, mergePuzzles } from "../api/_lib/themePuzzles.js";
 
 const fails = [];
@@ -33,6 +33,8 @@ ok(parseAngles("fork,evil") === null && parseAngles("") === null && parseAngles(
   ok(parseLichessPuzzle({ game: { pgn: "e4" }, puzzle: { id: "bad id!", solution: ["e7e5"] } }) === null, "parseLichessPuzzle: 이상한 id 버림");
   const m = mergePuzzles({ puzzles: [{ id: "a", fen: "x", sol: ["e4"] }, { id: "b", fen: "y", sol: ["d4"] }] }, [{ id: "a", fen: "x", sol: ["e4"] }], 5);
   ok(m.length === 2 && m[0].id === "a", "mergePuzzles: id 중복 제거");
+  const mt = mergePuzzles({ puzzles: [{ id: "c", fen: "x", sol: ["e4"], themes: ["fork"] }, { id: "d", fen: "y", sol: ["d4"], themes: ["smotheredMate", "mateIn2"] }] }, [{ id: "e", fen: "z", sol: ["c4"] }], 5, "smotheredMate");
+  ok(mt.length === 1 && mt[0].id === "d", "mergePuzzles: 요청한 테마가 없는 Lichess 퍼즐은 버림(BUG-199)");
 }
 // 메이트 패턴
 { const c = new Chess("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"); c.move("Ra8"); ok(mateShape(c.fen()) === "backRank", "mateShape: 백랭크 메이트"); }
@@ -53,12 +55,33 @@ ok(mateShape("7k/8/8/8/8/8/8/6K1 b - - 0 1") === null, "mateShape: 메이트가 
 // 최근 레슨 → 퍼즐 묶음, 풀이 판정, 최근 목록
 {
   const g = recentThemeGroups(["t_fork", "z_forksq", "m_smothered"], lessonById, 3);
-  ok(g.length === 2 && g[0].angle === "fork" && g[1].angle === "smotheredMate", "recentThemeGroups: 같은 테마는 한 번만");
+  ok(g.length === 3 && g[0].angle === "fork" && g[2].angle === "smotheredMate" && !g[2].own && g.every((x) => x.lessonId), "recentThemeGroups: 레슨마다 하나(v0.7.9)");
   const f = "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1";
   ok(puzzleMoveOk(f, "Ra8#", ["Ra8#"], 0) && !puzzleMoveOk(f, "Ra7", ["Ra8#"], 0), "puzzleMoveOk: 정답·오답");
   ok(puzzleMoveOk("6k1/5ppp/8/8/8/8/8/RR4K1 w - - 0 1", "Rb8#", ["Ra8#"], 0), "puzzleMoveOk: 마지막 수는 다른 메이트도 정답");
   let r = []; for (let i = 0; i < 12; i++) r = pushRecent(r, "l" + i); r = pushRecent(r, "l5");
   ok(r.length === RECENT_MAX && r[0] === "l5" && new Set(r).size === r.length && pushRecent(r, "bad id!").join() === r.join(), "pushRecent: 맨 앞·중복 없음·최대 개수·이상한 id 무시");
 }
+// (v0.7.9, BUG-199) OpenChess 테마 퍼즐 은행 — 최신이고, 모든 레슨이 퍼즐을 가지며, 모두 끝까지 합법이다.
+{
+  const { buildBank } = await import("./build-lesson-puzzles.mjs");
+  const { readFileSync } = await import("node:fs");
+  const { Chess } = await import("chess.js");
+  const fresh = buildBank(), saved = JSON.parse(readFileSync(new URL("../src/data/lessonPuzzleBank.json", import.meta.url), "utf8"));
+  ok(JSON.stringify(fresh) === JSON.stringify(saved), "src/data/lessonPuzzleBank.json이 최신이 아님 — node scripts/build-lesson-puzzles.mjs 실행");
+  for (const l of allLessons()) {
+    const rows = saved[l.id] || [];
+    ok(rows.length >= (l.motif ? 1 : 3), l.id + ": 추가 학습 퍼즐이 " + rows.length + "개(최소 " + (l.motif ? 1 : 3) + ")");
+    for (const r of rows) {
+      let c; try { c = new Chess(r[0]); } catch { ok(false, l.id + ": FEN 오류 " + r[0]); continue; }
+      const sans = String(r[1]).split(" ");
+      ok(sans.every((x) => { try { return !!c.move(x); } catch { return false; } }), l.id + ": 정답 수순이 합법이 아님 " + r[0] + " " + r[1]);
+    }
+  }
+  const g = bankPuzzles(saved, "m_smothered");
+  ok(g.length >= 3 && g.some((p) => p.from.startsWith("g:")), "m_smothered: 은행에 마스터 대국 스모더드 메이트가 없음");
+  ok(puzzleMoveOk("4k3/8/8/8/8/8/8/R3K3 w - - 0 1", "Ra8+", ["Re1+"], 0, [["Re1+", "Ra8+"]]), "puzzleMoveOk: 은행 퍼즐의 다른 정답(oks)");
+}
+
 if (fails.length) { console.error("✗ check-theme-puzzles 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-theme-puzzles: 레슨 " + lessons.length + "개의 테마가 서버 허용 목록 안에 있고, Lichess 해석·메이트 패턴·OpenChess 퍼즐 분석·풀이 판정이 맞다");
