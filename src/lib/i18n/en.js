@@ -473,7 +473,7 @@ export default {
   "같이 보기 보드 열기. 한 보드를 둘이 함께 둠": "Open a shared board. Two people play on one board together",
   "/play <분>[+<초>] | <미니게임 이름>": "/play <minutes>[+<seconds>] | <mini-game name>",
   "상대에게 실시간 체스 대국이나 미니게임 대결 신청. 예: /play 10, /play 15+10, /play knight": "Challenge the other person to a real-time chess game or a mini-game duel. Examples: /play 10, /play 15+10, /play knight",
-  "대국": "game",
+  "대국": "Game",
   "체스 3분": "Chess 3 min",
   "체스 10분": "Chess 10 min",
   "체스 15+10": "Chess 15+10",
@@ -6766,4 +6766,8 @@ export default {
   "도감 카드 재디자인": "Redesigned Collection cards",
   "수 등급의 의미대로 짠 12단계 138개 레슨을 하나씩 엽니다. 두 코치가 지난 레슨을 짚어 주고 개념을 설명한 뒤 문제를 내며, 친구가 배우는 레슨도 경로에 보입니다.": "Unlock 138 lessons across 12 stages built around the meaning of move grades. Two coaches recap the last lesson and explain each idea before asking, and you can see where friends are on the path.",
   "최근 대국에서 실수한 포지션을 다시 풀고, 모든 레슨에 있는 테마 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.": "Re-solve the positions where you went wrong in recent games, and solve the theme puzzles every lesson has. Growth analysis lives in the Analysis tab.",
+  "일일 퍼즐 없음": "No daily Puzzle",
+  "눌러서 다시 시도": "Tap to retry",
+  "일일 퍼즐을 불러오지 못함. 잠시 후 다시 시도": "Couldn't load the daily Puzzle. Try again shortly",
+  "오프닝·생성자 검색, 퍼즐 번호·날짜": "Search Opening·creator, Puzzle no.·date",
 };

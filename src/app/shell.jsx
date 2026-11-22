@@ -609,15 +609,17 @@ export function dailyQuestQuestsValid(quests) {
 export function useDailyPuzzle(engine, dateStr) {
   const t = dateStr || todayStr();
   const [resolved, setResolved] = useState(null); // {date, puzzle}
+  const [retry, setRetry] = useState(0);   // (v0.8.0, BUG-200) 조회 실패 시 30초 뒤 다시 묻는다
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false, timer = 0;
     // (v0.5.0 변경) 대부분의 경로(커뮤니티 선정)는 엔진이 필요 없어져, 엔진 준비를 기다리지 않고
     // 곧바로 시도한다 — 드문 개발자 오버라이드 경로만 엔진이 필요한데, resolveDailyPuzzleCached가
     // 그 경우엔 캐시를 확정하지 않으므로 엔진이 나중에 준비되면(의존성 배열의 engine.status 변화로)
     // 이 effect가 다시 실행되어 자연히 재시도된다.
-    resolveDailyPuzzleCached(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
-    return () => { cancelled = true; };
-  }, [t, engine && engine.status]);
+    resolveDailyPuzzleCached(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); })
+      .catch(() => { if (!cancelled) timer = setTimeout(() => setRetry((n) => n + 1), 30000); });
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [t, engine && engine.status, retry]);
   return (resolved && resolved.date === t) ? resolved.puzzle : null;
 }
 export const ALL_TITLE_IDS = _ALL_TITLE_IDS;
@@ -1998,7 +2000,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
             바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
         <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14, marginTop: 4 }}>
           {/* (v0.6.8) 로고를 가운데가 아니라 왼쪽 위에 두고 조금 키웠다(30→40). 이미지의 투명 여백은 이미 잘려 있어 height가 곧 실제 크기. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 40, width: "auto" }} />
+          <img src="/OpenChessLogo.webp" alt="OpenChess" style={{ display: "block", height: 40, width: "auto" }} />
         </div>
         <div style={{ marginBottom: 14, paddingRight: 30 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>

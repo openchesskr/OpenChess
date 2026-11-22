@@ -10,6 +10,7 @@ import { FacetDiamond, FacetCrown, GOLD, facetRamp } from "./components/facetIco
 import { QCOLOR } from "./lib/moveKinds.js";
 import { PieceIcon, PIECE_TYPES } from "./components/pieceIcons.jsx";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
+import { usePageTitle } from "./lib/pageTitle.js";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프는 App.jsx의 T 객체·
@@ -312,13 +313,13 @@ function FamousOpeningsSection() {
 
 function TierStrip() {
   const tiers = [
-    { key: "iron", label: t("아이언"), img: "/iron-pawn.png" },
-    { key: "bronze", label: t("브론즈"), img: "/bronze-knight.png" },
-    { key: "silver", label: t("실버"), img: "/silver-bishop.png" },
-    { key: "gold", label: t("골드"), img: "/gold-rook.png" },
-    { key: "diamond", label: t("다이아몬드"), img: "/diamond-queen.png" },
-    { key: "master", label: t("마스터"), img: "/master-king.png" },
-    { key: "grandmaster", label: t("그랜드마스터"), img: "/gm-piece.png" },
+    { key: "iron", label: t("아이언"), img: "/iron-pawn.webp" },
+    { key: "bronze", label: t("브론즈"), img: "/bronze-knight.webp" },
+    { key: "silver", label: t("실버"), img: "/silver-bishop.webp" },
+    { key: "gold", label: t("골드"), img: "/gold-rook.webp" },
+    { key: "diamond", label: t("다이아몬드"), img: "/diamond-queen.webp" },
+    { key: "master", label: t("마스터"), img: "/master-king.webp" },
+    { key: "grandmaster", label: t("그랜드마스터"), img: "/gm-piece.webp" },
   ];
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
@@ -690,7 +691,7 @@ function HeroPhones() {
         <img src="/oc-coin.png" alt="" style={{ width: 22, height: 22 }} /><span style={{ fontSize: 13, fontWeight: 900, color: T.brassHi }}>+10</span>
       </FloatChip>
       <FloatChip x={{ left: -12 }} y={{ bottom: 120 }} delay={0.5} rot={3}>
-        <TierBadgeShape size={30}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+        <TierBadgeShape size={30}><img src="/iron-pawn.webp" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
         <div><div style={{ fontSize: 11, fontWeight: 800, color: T.ivoryHi }}>{t("아이언")} 5</div><div style={{ width: 70, height: 4, borderRadius: 2, background: "rgba(255,255,255,.15)", marginTop: 3 }}><div style={{ width: "62%", height: "100%", borderRadius: 2, background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")" }} /></div></div>
       </FloatChip>
       <FloatChip x={{ right: -6 }} y={{ bottom: 60 }} delay={0.7} rot={-5}>
@@ -747,7 +748,7 @@ function PuzzleDemo() {
     <div style={{ borderRadius: 2, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#3A2516", maxWidth: 360, margin: "0 auto", position: "relative" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         <div className="flex items-center" style={{ gap: 8 }}>
-          <TierBadgeShape size={34}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+          <TierBadgeShape size={34}><img src="/iron-pawn.webp" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
           <div><div style={{ fontSize: 12, fontWeight: 900 }}>{t("아이언")} 5</div><div style={{ width: 90, height: 4, borderRadius: 2, background: "rgba(90,58,34,.2)", marginTop: 3 }}><motion.div animate={{ width: step ? "46%" : "28%" }} style={{ height: "100%", borderRadius: 2, background: "#C49A50" }} /></div></div>
         </div>
         <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(58,37,22,.9)", color: T.brassHi, borderRadius: 2, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
@@ -803,7 +804,7 @@ function QuestDemo() {
   );
 }
 const TIER_DEMO = [
-  { img: "/iron-pawn.png", name: t("아이언"), max: 500 }, { img: "/bronze-knight.png", name: t("브론즈"), max: 2000 }, { img: "/silver-bishop.png", name: t("실버"), max: 10000 }, { img: "/gold-rook.png", name: t("골드"), max: 50000 },
+  { img: "/iron-pawn.webp", name: t("아이언"), max: 500 }, { img: "/bronze-knight.webp", name: t("브론즈"), max: 2000 }, { img: "/silver-bishop.webp", name: t("실버"), max: 10000 }, { img: "/gold-rook.webp", name: t("골드"), max: 50000 },
 ];
 function XpDemo() {
   const [xp, setXp] = useState(180);
@@ -3266,10 +3267,10 @@ const VERSION_HISTORY = [
 // 이미지·애니메이션으로 보여주는" 구성 — 버전마다 대표 기능 하나를 뽑아 아이콘 펄스, 실제 티어
 // 이미지, 또는 승급 연출을 그대로 재현한 미니 데모로 보여준다.
 const PROMO_TIERS = [
-  { img: "/iron-pawn.png", label: t("아이언 승급") },
-  { img: "/bronze-knight.png", label: t("브론즈 승급") },
-  { img: "/silver-bishop.png", label: t("실버 승급") },
-  { img: "/gold-rook.png", label: t("골드 승급") },
+  { img: "/iron-pawn.webp", label: t("아이언 승급") },
+  { img: "/bronze-knight.webp", label: t("브론즈 승급") },
+  { img: "/silver-bishop.webp", label: t("실버 승급") },
+  { img: "/gold-rook.webp", label: t("골드 승급") },
 ];
 // v0.1.1에서 새로 생긴 "티어가 오르면 화면이 바뀌며 승급하는" 연출을, 실제 사이트에서 쓰는 것과
 // 같은 시각 언어(GOLD_DISC)로 축소 재현한다 — 일정 간격으로 다음 티어로 자동 순환.
@@ -3555,6 +3556,7 @@ const PAGES_META = [{ key: "intro", label: t("사이트 소개"), Icon: Compass 
 const LATEST_VERSION = VERSION_HISTORY[0].version;
 
 export default function AboutPage() {
+  usePageTitle(t("소개"));
   usePerfLite(); // 가벼운 모드로 바뀌면 다시 그려 무한 반복 모션을 멈춘다
   // 공지 모달의 "자세히 보기"(?page=2)나 #history로 들어오면 버전 기록 페이지부터 보여준다.
   const initialPage = useMemo(() => {
@@ -3609,7 +3611,7 @@ export default function AboutPage() {
       <AmbientLayer rich />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
-          <img className="ab-glitch" src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <img className="ab-glitch" src="/OpenChessLogo.webp" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
           <a href="/" className="press ab-sheen ab-glint" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 2, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
         </div>

@@ -48,6 +48,16 @@ export function ListPager({ page, setPage, pageCount, jump = 5 }) {
     </div>
   );
 }
+// (v0.8.0, BUG-202) 켜기/끄기 스위치 — 예전엔 설정 탭에 같은 모양이 8번 손으로 복사돼 일부만 role="switch"·aria-checked·이름을 가졌다.
+//  이제 스위치는 모두 이 부품 하나로 그린다(label 필수: 화면 낭독기가 읽는 이름). check-a11y-controls가 복사본을 막는다.
+export function ToggleSwitch({ on, onChange, label, disabled = false }) {
+  return (
+    <button type="button" onClick={() => { if (!disabled) onChange(!on); }} disabled={disabled} role="switch" aria-checked={!!on} aria-label={label} className="press"
+      style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: disabled ? "default" : "pointer", border: "none", flexShrink: 0, opacity: disabled ? 0.5 : 1, padding: 0 }}>
+      <span aria-hidden="true" style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+    </button>
+  );
+}
 export function NavBtn({ children, onClick, disabled, active, size = 40, label }) {
   return <button onClick={onClick} disabled={disabled} aria-label={label} title={label} aria-pressed={active == null ? undefined : !!active} className="press" style={{ width: size, height: size, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: active ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "linear-gradient(180deg,#3A2516,#241509)", color: disabled ? "#6A5A45" : T.ivoryHi, border: "1px solid #000", boxShadow: disabled ? "none" : "0 3px 0 #000", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1 }}>{children}</button>;
 }

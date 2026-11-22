@@ -473,7 +473,7 @@ export default {
   "같이 보기 보드 열기. 한 보드를 둘이 함께 둠": "Abrir un tablero compartido. Dos personas juegan juntas en un mismo tablero",
   "/play <분>[+<초>] | <미니게임 이름>": "/play <minutos>[+<segundos>] | <nombre del minijuego>",
   "상대에게 실시간 체스 대국이나 미니게임 대결 신청. 예: /play 10, /play 15+10, /play knight": "Reta a la otra persona a una partida de ajedrez en tiempo real o a un duelo de minijuego. Ejemplos: /play 10, /play 15+10, /play knight",
-  "대국": "partida",
+  "대국": "Partida",
   "체스 3분": "Ajedrez 3 min",
   "체스 10분": "Ajedrez 10 min",
   "체스 15+10": "Ajedrez 15+10",
@@ -6766,4 +6766,8 @@ export default {
   "도감 카드 재디자인": "Fichas de la colección rediseñadas",
   "수 등급의 의미대로 짠 12단계 138개 레슨을 하나씩 엽니다. 두 코치가 지난 레슨을 짚어 주고 개념을 설명한 뒤 문제를 내며, 친구가 배우는 레슨도 경로에 보입니다.": "Desbloquea 138 lecciones en 12 etapas construidas según el significado de las clasificaciones de jugadas. Dos entrenadores repasan la lección anterior y explican cada idea antes de preguntar, y ves por dónde van tus amigos.",
   "최근 대국에서 실수한 포지션을 다시 풀고, 모든 레슨에 있는 테마 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.": "Vuelve a resolver las posiciones en las que fallaste en partidas recientes y resuelve los puzles temáticos de cada lección. El análisis de progreso está en la pestaña Análisis.",
+  "일일 퍼즐 없음": "Sin Puzle diario",
+  "눌러서 다시 시도": "Toca para reintentar",
+  "일일 퍼즐을 불러오지 못함. 잠시 후 다시 시도": "No se pudo cargar el Puzle diario. Inténtalo de nuevo en un momento",
+  "오프닝·생성자 검색, 퍼즐 번호·날짜": "Buscar Apertura·creador, n.º de Puzle·fecha",
 };

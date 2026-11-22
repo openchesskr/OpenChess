@@ -21,6 +21,7 @@ import { ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGI
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang, fmtDateOnly } from "../lib/i18n.js";
 import Dropdown from "../components/Dropdown.jsx";
+import { ToggleSwitch } from "../components/uiPrimitives.jsx";   // (v0.8.0, BUG-202) 공용 켜기/끄기 스위치
 
 // (v0.4.7 기능, 사용자 재제보) "퍼즐 컨트롤 센터"의 손상 검사가 라인 개수(0개)만 보다 보니, 트리·라인
 // 구조 자체는 있지만 그 안의 수순이 실제로는 그 자리에서 둘 수 없는(예: setupSans·mistakeSan이 그
@@ -648,7 +649,7 @@ function UgcTranslateToggle() {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("다른 언어로 쓴 글 자동 번역")}</div>
         </div>
-        <button onClick={flip} role="switch" aria-checked={on} aria-label={t("다른 언어로 쓴 글 자동 번역")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        <ToggleSwitch on={on} onChange={() => flip()} label={t("다른 언어로 쓴 글 자동 번역")} />
       </div>
     </div>
   );
@@ -662,7 +663,7 @@ function DevModeRow({ label, hint, on, onToggle }) {
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}><Crown size={14} style={{ color: T.brass, flexShrink: 0 }} />{label}</div>
         {hint && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{hint}</div>}
       </div>
-      <button onClick={onToggle} role="switch" aria-checked={!!on} aria-label={label} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+      <ToggleSwitch on={on} onChange={() => onToggle()} label={label} />
     </div>
   );
 }
@@ -835,7 +836,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
           <div style={{ minWidth: 0 }}>
             <div className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><Zap size={14} style={{ color: T.brass }} />{t("빠른 리뷰")}</div>
           </div>
-          <button onClick={() => setQuickReview(!quickReview)} role="switch" aria-checked={!!quickReview} aria-label={t("빠른 리뷰")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: quickReview ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: quickReview ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <ToggleSwitch on={quickReview} onChange={(v) => setQuickReview(v)} label={t("빠른 리뷰")} />
         </div>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t("분석 엔진")}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -899,7 +900,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("포지션 변동성 보정")}</div>
             <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1 }}>{t("날카로운 포지션의 실수를 더 엄격하게 반영")}</div>
           </div>
-          <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <ToggleSwitch on={sharpOn} onChange={(v) => setSharpOn(v)} label={t("포지션 변동성 보정")} />
         </div>
       </div>
 
@@ -921,7 +922,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{o.label}</div>
                 <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1 }}>{o.desc}</div>
               </div>
-              <button onClick={() => o.set(!o.on)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: o.on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: o.on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+              <ToggleSwitch on={o.on} onChange={(v) => o.set(v)} label={o.label} />
             </div>
           </React.Fragment>
         ))}
@@ -936,7 +937,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
             {bgmOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
             <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("배경음악")}</span>
           </div>
-          <button onClick={onToggleBgm} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: bgmOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: bgmOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <ToggleSwitch on={bgmOn} onChange={() => onToggleBgm()} label={t("배경음악")} />
         </div>
         <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => onBgmVolumeChange(parseFloat(e.target.value))} disabled={!bgmOn} aria-label={t("배경음악 음량")} style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: bgmOn ? 1 : 0.4, cursor: bgmOn ? "pointer" : "default" }} />
 
@@ -947,7 +948,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
             {sfxOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
             <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("효과음")}</span>
           </div>
-          <button onClick={onToggleSfx} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sfxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: sfxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <ToggleSwitch on={sfxOn} onChange={() => onToggleSfx()} label={t("효과음")} />
         </div>
         <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label={t("효과음 음량")} style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
       </div>
@@ -970,7 +971,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>
             <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1 }}>{t("나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시")}</div>
           </div>
-          <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label={t("통제 칸 표시")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <ToggleSwitch on={mgDangerOn} onChange={(v) => setMgDangerOn(v)} label={t("통제 칸 표시")} />
         </div>
       </div>
 

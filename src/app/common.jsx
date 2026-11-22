@@ -5543,18 +5543,22 @@ export function questLabelNode(q) {
 // 다시 돌릴 필요도 없다 — 날짜를 시드로 그 라인 중 하나를 결정적으로 골라 "XXXXXX-N" id를 부여
 // (기존과 동일한 규칙, dailyLineId). 개발자가 daily_puzzles_dev에 그 날짜의 PGN을 직접 등록해
 // 뒀으면(미래 날짜 예약·이벤트용 비상 수단으로 남겨 둠) 자동 선정 대신 그 포지션을 쓴다.
+// (v0.8.0, BUG-200) 일일 퍼즐 조회 실패 — "그 날짜 퍼즐 없음"(null)과 구분한다. 예전엔 조회 오류도 null로 삼켜
+//  화면이 "없음"과 "실패"를 가르지 못했고(카드가 끝없이 로딩 모양), 일시적 오류의 null이 날짜 캐시에 남아 새로고침 전까지 다시 묻지 않았다.
+export class DailyPuzzleFetchError extends Error { constructor(what, cause) { super("daily puzzle fetch failed: " + what); this.name = "DailyPuzzleFetchError"; this.cause = cause; } }
 async function fetchDailyPuzzlePick(dateStr) {
   if (!SB_ON) return null;
   try {
     const rows = await sbSelect("daily_puzzle_picks?date=eq." + dateStr + "&select=puzzle_no&limit=1");
     return rows && rows[0] ? rows[0].puzzle_no : null;
-  } catch { return null; }
+  } catch (e) { throw new DailyPuzzleFetchError("pick", e); }
 }
 async function fetchDailyPuzzleOverride(dateStr) {
+  if (!SB_ON) return null;
   try {
     const rows = await sbSelect("daily_puzzles_dev?date=eq." + dateStr + "&select=date,sans,puzzle_ply,opening&limit=1");
     return rows && rows[0] ? rows[0] : null;
-  } catch { return null; }
+  } catch (e) { throw new DailyPuzzleFetchError("override", e); }
 }
 // XXXXXX-N — XXXXXX는 퍼즐 시작 포지션(설정 수순)의 puzzleNo 해시, N은 genPuzzleTree가 만든 여러
 // 라인 중 몇 번째 줄을 뽑았는지(1부터, 사람이 읽기 쉬운 번호).
@@ -5590,7 +5594,9 @@ async function resolveDailyPuzzle(dateStr, engine) {
     try { no = await sbRpc("daily_puzzle_pick_ensure_today", {}); } catch { no = null; }
   }
   if (!no) return null; // 그 날짜 몫이 없음(지난 날짜이거나 공개 퍼즐이 하나도 없음) — 미배정으로 취급
-  const p = await puzzleFetch(no);
+  let p;
+  try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data,is_public&limit=1"); p = rows && rows[0] ? rows[0].data : null; }
+  catch (e) { throw new DailyPuzzleFetchError("puzzle", e); }   // (v0.8.0, BUG-200) puzzleFetch는 오류를 null로 삼키므로 여기선 직접 조회
   // (성능) 창작 시점에 이미 genPuzzleTree로 여러 응수 라인이 만들어져 puzzles.data에 그대로 저장돼
   // 있으므로, 로컬 엔진을 다시 돌릴 필요가 없다 — 날짜를 시드로 그 라인 중 하나만 결정적으로 고른다.
   if (!p || !p.lines || !p.lines.length) return null;
@@ -5613,7 +5619,7 @@ async function fetchDailyPuzzleCache(dateStr) {
   try {
     const rows = await sbSelect("daily_puzzle_cache?date=eq." + dateStr + "&select=data&limit=1");
     return rows && rows[0] ? rows[0].data : null;
-  } catch { return null; }
+  } catch (e) { throw new DailyPuzzleFetchError("cache", e); }
 }
 async function saveDailyPuzzleCache(dateStr, pz) {
   if (!SB_ON || !pz) return;
@@ -5654,6 +5660,10 @@ export function resolveDailyPuzzleCached(dateStr, engine) {
       else if (!engine || engine.status !== "ready") dailyPuzzleResolveCache.delete(dateStr);
       return pz;
     });
+  }).catch((e) => {
+    // (v0.8.0, BUG-200) 실패한 결과는 캐시에 남기지 않는다 — 다음 요청(다시 시도 버튼·탭 재진입) 때 새로 묻는다.
+    if (dailyPuzzleResolveCache.get(dateStr) === p) dailyPuzzleResolveCache.delete(dateStr);
+    throw e;
   });
   dailyPuzzleResolveCache.set(dateStr, p);
   return p;

@@ -16,7 +16,7 @@ import { SwipePager } from "../components/swipePager.jsx";
 import { PUZZLE_ZOOM_LABEL_BASE, snapPuzzleZoom, clampSchematicPan, anchoredZoomPan, PUZZLE_ZOOM_STEP, puzzleZoomLabel } from "../lib/schematicGeometry.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Cpu, Scissors, GitBranch, Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Cpu, Scissors, GitBranch, Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, X, Filter, Puzzle, RefreshCw } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
@@ -2404,7 +2404,19 @@ const DAILY_SLOT_W = DAILY_CARD_W + 28; // 카드 폭 + 여백 28px = 카드 사
 // 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
 const DAILY_BOARD_SIZE = 190;
 // (v0.7.7, 사용자 요청) 연속 기록 줄(DailyStreakStrip·배지 목록)은 없앴다 — 소셜 탭 머리줄의 StreakCount(불꽃 + 일수)만 남는다.
-function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
+// (v0.8.0, BUG-200) 일일 퍼즐 카드 상태: loading(스켈레톤) · ready(보드) · none(그 날짜 퍼즐 없음) · failed(불러오기 실패, 눌러서 다시 시도).
+//  예전엔 퍼즐이 아니면 모두 스켈레톤이라 "없음"·"실패"가 끝없는 로딩처럼 보였다.
+const DAILY_FAILED = "__daily_failed__";
+function DailyCardNotice({ failed }) {
+  return (
+    <div role="status" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 14px", textAlign: "center", color: "#7A5A34" }}>
+      {failed ? <RefreshCw size={30} color="#A0762F" /> : <Puzzle size={30} color="#B89A68" />}
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{failed ? t("불러오기 실패") : t("일일 퍼즐 없음")}</div>
+      {failed && <div style={{ fontSize: 11, fontWeight: 600, color: "#8A6C45" }}>{t("눌러서 다시 시도")}</div>}
+    </div>
+  );
+}
+function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, status = puzzle ? "ready" : "loading", onOpen }) {
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? t(", 오늘") : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
   // (버그 보충) 모든 카드가 이제 항상 같은 폭(DAILY_CARD_W)이라 여백이 균등해진다 — "활성" 표시는
@@ -2418,7 +2430,9 @@ function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance,
             그라데이션 대신 T.ivoryHi 크림 그라데이션, 해결 시엔 같은 연두색 그라데이션을 그대로 쓴다. */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_CARD_W, padding: 8, borderRadius: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", border: "1px solid " + (isSolved ? "#A9C589" : (isActive ? T.brass : "#CDB98E")), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.4)" : "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E") }}>
           <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#FBF5E8", border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), position: "relative" }}>
-            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div aria-hidden="true" className="oc-skel oc-skel-light" style={{ width: 100, height: 100, borderRadius: 8 }} />}
+            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} />
+              : status === "none" || status === "failed" ? <DailyCardNotice failed={status === "failed"} />
+              : <div aria-hidden="true" className="oc-skel oc-skel-light" style={{ width: 100, height: 100, borderRadius: 8 }} />}
             {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
           </div>
           {solveCountText(solveCount, null) && <div style={{ fontSize: 11.5, color: "#2E6E2E", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
@@ -2437,7 +2451,8 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   const scrollerRef = useRef(null);
   const [containerW, setContainerW] = useState(0);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [resolvedMap, setResolvedMap] = useState({}); // dateStr -> puzzle|null(계산 완료)
+  const [resolvedMap, setResolvedMap] = useState({}); // dateStr -> puzzle|null(계산 완료)|DAILY_FAILED(조회 실패)
+  const [retryTick, setRetryTick] = useState(0);   // (v0.8.0, BUG-200) 실패한 카드를 눌러 다시 시도
   // (버그 수정) dates는 비동기로 채워지므로, 이 컴포넌트의 "첫" 렌더에서는 dates가 아직 비어 있어
   // 아래 `if (!dates.length) return null`에 걸려 스크롤러 자체가 DOM에 없다 — 그 시점에 이 effect가
   // (빈 deps라 딱 한 번만) 실행되면 scrollerRef.current가 null이라 측정을 건너뛰고, dates가 나중에
@@ -2464,9 +2479,12 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     idxs.forEach((i) => {
       const d = dates[i];
       if (resolvedMap[d] !== undefined) return;
-      resolveDailyPuzzleCached(d, engine).then((pz) => { setResolvedMap((m) => (m[d] !== undefined ? m : { ...m, [d]: pz })); });
+      resolveDailyPuzzleCached(d, engine)
+        .then((pz) => { setResolvedMap((m) => (m[d] !== undefined ? m : { ...m, [d]: pz })); })
+        .catch(() => { setResolvedMap((m) => (m[d] !== undefined ? m : { ...m, [d]: DAILY_FAILED })); });
     });
-  }, [activeIdx, dates, engine]);
+  }, [activeIdx, dates, engine, retryTick]);
+  const retryDate = (d) => { setResolvedMap((m) => { const n = { ...m }; delete n[d]; return n; }); setRetryTick((x) => x + 1); };
   const onScroll = () => {
     const el = scrollerRef.current;
     if (!el || !dates) return;
@@ -2544,12 +2562,14 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
       <div ref={scrollerRef} onScroll={onScroll} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture} style={{ display: "flex", overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}>
         <div style={{ flex: "0 0 auto", width: spacer }} />
         {dates.map((d, i) => {
-          const pz = resolvedMap[d];
+          const raw = resolvedMap[d];
+          const failed = raw === DAILY_FAILED;
+          const pz = failed ? null : raw;   // undefined = 계산 중, null = 그 날짜 퍼즐 없음
           const isSolved = pz ? solved.has(pz.id) : false;
           const rawCount = pz ? ((solveCounts && solveCounts[puzzleNo(pz.id)]) || 0) : 0;
           const count = Math.max(rawCount, isSolved ? 1 : 0);
           return (
-            <DailyPuzzleCarouselItem key={d} dateStr={d} isToday={i === 0} puzzle={pz} isActive={i === activeIdx} distance={Math.abs(i - activeIdx)} isSolved={isSolved} solveCount={count} onOpen={() => { if (i === activeIdx) { if (pz) onOpen(pz); } else scrollToIndex(i); }} />
+            <DailyPuzzleCarouselItem key={d} dateStr={d} isToday={i === 0} puzzle={pz} isActive={i === activeIdx} distance={Math.abs(i - activeIdx)} isSolved={isSolved} solveCount={count} status={failed ? "failed" : pz === null ? "none" : pz ? "ready" : "loading"} onOpen={() => { if (i === activeIdx) { if (pz) onOpen(pz); else if (failed) retryDate(d); } else scrollToIndex(i); }} />
           );
         })}
         <div style={{ flex: "0 0 auto", width: spacer }} />
@@ -3195,7 +3215,8 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       const dateStr = m[1] + "-" + m[2] + "-" + m[3];
       if (dateStr > todayStr()) { setNumMsg(t("아직 오지 않은 날짜")); return; }
       setNumMsg(t("불러오는 중…"));
-      const pz = await resolveDailyPuzzleCached(dateStr, engine);
+      let pz;
+      try { pz = await resolveDailyPuzzleCached(dateStr, engine); } catch { setNumMsg(t("일일 퍼즐을 불러오지 못함. 잠시 후 다시 시도")); return; }   // (v0.8.0, BUG-200)
       if (pz) { setNumMsg(""); setNumInput(""); setActive(pz); } else setNumMsg(t("{0} 일일 퍼즐 없음", (dateStr)));
       return;
     }
@@ -3393,7 +3414,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
           <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
             <input value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setNumMsg(""); }} onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => setSearchFocus(false), 150)}
               onKeyDown={(e) => { if (e.key === "Enter" && numInput) solveByInput(); }} aria-label={t("오프닝/생성자 검색 또는 퍼즐 번호/일일 퍼즐 날짜 입력")} title={t("오프닝/생성자 검색 또는 퍼즐 번호/일일 퍼즐 날짜 입력")}
-              placeholder={t("오프닝/생성자 검색 또는 퍼즐 번호/일일 퍼즐 날짜 입력")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+              placeholder={t("오프닝·생성자 검색, 퍼즐 번호·날짜")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
             {/* 번호 모드 — 입력 중인 번호로 시작하는 퍼즐 추천(Enter: 번호·날짜로 바로 열기) */}
             {searchFocus && numInput && (
               <div style={{ position: "absolute", left: 0, minWidth: "100%", width: "max-content", maxWidth: "min(360px, 86vw)", top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)" }}>

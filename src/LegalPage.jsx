@@ -5,6 +5,7 @@ import { CONTACT_EMAIL } from "./lib/siteConfig.js";
 import { t, tx, fmtDateOnly } from "./lib/i18n.js";
 import LangSwitch from "./components/LangSwitch.jsx";
 import { RevealOnce, ScrollTopButton } from "./components/motionKit.jsx";
+import { usePageTitle } from "./lib/pageTitle.js";
 // (v0.6.0, 앱 출시 준비) 개인정보처리방침(/privacy)·이용약관(/terms). App을 거치지 않는 가벼운 정적 페이지로,
 // main.jsx가 경로만 보고 이 컴포넌트를 렌더링한다(스토어 심사에서 로그인 없이 열리는 주소가 필요하다).
 // 문구는 사이트 규칙대로 명사형·개조식. 시행일을 바꿀 때는 아래 EFFECTIVE 한 곳만 고친다.
@@ -119,6 +120,7 @@ const DELETION = [
 export default function LegalPage({ kind }) {
   const isPrivacy = kind === "privacy", isDelete = kind === "account-deletion";
   const title = isDelete ? t("계정 및 데이터 삭제 안내") : isPrivacy ? t("개인정보처리방침") : t("이용약관");
+  usePageTitle(title);
   const sections = isDelete ? DELETION : isPrivacy ? PRIVACY : TERMS;
   const other = isPrivacy ? { href: "/terms", label: t("이용약관") } : { href: "/privacy", label: t("개인정보처리방침") };
   const deletionLink = { href: "/account-deletion", label: t("계정 및 데이터 삭제 안내") };
@@ -127,7 +129,7 @@ export default function LegalPage({ kind }) {
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 760, margin: "0 auto", padding: "14px 20px" }}>
           <a href="/" style={{ display: "inline-flex", alignItems: "center" }}>
-            <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto" }} />
+            <img src="/OpenChessLogo.webp" alt="OpenChess" style={{ display: "block", height: 34, width: "auto" }} />
           </a>
           <LangSwitch />
         </div>

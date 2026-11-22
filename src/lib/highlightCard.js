@@ -19,7 +19,7 @@ export async function loadHighlightCardAssets(data) {
   const names = ["K", "Q", "R", "B", "N", "P"], jobs = [];
   for (const c of ["w", "b"]) for (const n of names) jobs.push(loadImageSafe(PIECE_IMG_SETS.classic.images[n][c].src));
   const kinds = [...new Set((data.moments || []).map((m) => m.kind))];
-  const [logo, ...rest] = await Promise.all([loadImageSafe("/OpenChessLogo.png"), ...jobs, ...kinds.map((k) => loadImageSafe(BADGE_ICON_SRC[k]))]);
+  const [logo, ...rest] = await Promise.all([loadImageSafe("/OpenChessLogo.webp"), ...jobs, ...kinds.map((k) => loadImageSafe(BADGE_ICON_SRC[k]))]);
   const pieces = {}; let i = 0;
   for (const c of ["w", "b"]) for (const n of names) pieces[n + c] = rest[i++];
   const badges = {}; kinds.forEach((k, j) => { badges[k] = rest[12 + j]; });

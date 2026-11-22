@@ -28,5 +28,14 @@ if ((hv("X-Content-Type-Options") || "").toLowerCase() !== "nosniff") problems.p
 if (hv("X-Frame-Options") !== "DENY") problems.push("X-Frame-Options: DENY 필요");
 if (!/max-age=\d{7,}/.test(hv("Strict-Transport-Security") || "")) problems.push("Strict-Transport-Security(max-age) 필요");
 if (hv("Cross-Origin-Opener-Policy") !== "same-origin") problems.push("Cross-Origin-Opener-Policy: same-origin 필요");
+// (v0.8.0) 캐시: Vite가 이름에 내용 해시를 붙인 /assets/ 파일은 1년 immutable(재방문 때 다시 확인 요청 없음).
+//  public/assets 폴더를 만들면 해시 없는 파일이 1년 캐시에 묶이므로 금지.
+{
+  const ah = vj.headers.find((h) => h.source === "/assets/(.*)");
+  const cc = ah && (ah.headers.find((h) => h.key.toLowerCase() === "cache-control") || {}).value;
+  if (!cc || !/max-age=31536000/.test(cc) || !/immutable/.test(cc)) problems.push("/assets/(.*)에 Cache-Control: public, max-age=31536000, immutable 필요(해시 붙은 빌드 파일)");
+  const { existsSync } = await import("node:fs");
+  if (existsSync(new URL("../public/assets", import.meta.url))) problems.push("public/assets 폴더 금지 — 해시 없는 파일이 1년 캐시에 묶인다(다른 폴더 이름을 쓸 것)");
+}
 if (problems.length) { console.error("✗ check-security-headers 실패:\n - " + problems.join("\n - ")); process.exit(1); }
-console.log("✓ check-security-headers: CSP 강제 적용(script-src 엄격·WASM 허용·CDN은 경로 제한), 프레임·객체·base·form 제한, HSTS·nosniff·COOP 유지");
+console.log("✓ check-security-headers: CSP 강제 적용(script-src 엄격·WASM 허용·CDN은 경로 제한), 프레임·객체·base·form 제한, HSTS·nosniff·COOP 유지, /assets 1년 캐시");

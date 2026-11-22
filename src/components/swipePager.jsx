@@ -2,7 +2,7 @@
 // 다음 페이지가 오른쪽에 살짝 보이게(peek) 페이지 폭을 줄이고, 처음 한 번 넘기면 사라지는 "옆으로 밀어서 이동" 안내를 보여 준다. 위쪽 탭 줄·점·n/N 표시는 두지 않는다.
 // pages: [{ key, node }]. 바깥 여백(18px)에 맞춰 좌우로 -18px 넓혀 그린다.
 import { useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
@@ -10,10 +10,15 @@ import { LOOP } from "../lib/perfMode.js";
 import { OffscreenPause } from "./offscreenPause.jsx";
 
 const PAGER_SEEN_KEY = "oc_learn_pager_seen";
+const HINT_MS = 4500;   // (v0.8.0) 안내를 보여 주는 시간
 export function SwipePager({ pages, onIndexChange }) {   // (v0.7.6) onIndexChange(i): 지금 보이는 페이지가 바뀔 때(분석 탭 성장 분석이 보일 때만 자동 리뷰를 돌리려고)
   const scRef = useRef(null), pageRefs = useRef([]);
   const [idx, setIdx] = useState(0);
   const [hint, setHint] = useState(() => { try { return window.localStorage.getItem(PAGER_SEEN_KEY) !== "1"; } catch { return true; } });
+  // (v0.8.0, BUG-205) 안내가 페이지 오른쪽 위(제목·"새 게시물" 버튼 자리)를 덮고 있어, 몇 초 보여 준 뒤 이번 방문 동안은 접는다.
+  //  한 번도 넘기지 않은 사용자에게는 다음 방문 때 다시 보인다(넘기면 영구히 사라짐 — PAGER_SEEN_KEY).
+  const [hintShown, setHintShown] = useState(true);
+  useEffect(() => { if (!hint) return undefined; const id = setTimeout(() => setHintShown(false), HINT_MS); return () => clearTimeout(id); }, [hint]);
   const raf = useRef(0);
   const onScroll = () => {
     cancelAnimationFrame(raf.current);
@@ -39,13 +44,15 @@ export function SwipePager({ pages, onIndexChange }) {   // (v0.7.6) onIndexChan
             </div>
           ))}
         </div>
-        {hint && pages.length > 1 && (
-          <motion.div aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+        <AnimatePresence>
+        {hint && hintShown && pages.length > 1 && (
+          <motion.div key="pager-hint" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { delay: 0.6 } }} exit={{ opacity: 0, transition: { duration: 0.4 } }}
             style={{ position: "absolute", right: 0, top: 10, zIndex: 5, pointerEvents: "none", display: "flex", alignItems: "center", gap: 2, padding: "9px 10px 9px 14px", borderRadius: "999px 0 0 999px", background: "linear-gradient(90deg,rgba(21,12,6,.0),rgba(21,12,6,.92) 35%)", color: T.brassHi, fontSize: 11.5, fontWeight: 900 }}>
             {t("옆으로 밀어서 이동")}
             <motion.span animate={{ x: [0, 6, 0] }} transition={{ duration: 1.1, repeat: LOOP(), ease: "easeInOut" }} style={{ display: "flex" }}><ChevronsRight size={18} /></motion.span>
           </motion.div>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );

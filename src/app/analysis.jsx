@@ -3901,7 +3901,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <NavBtn size={46} onClick={() => setFlip((v) => !v)} active={flip} label={t("보드 뒤집기")}><ArrowUpDown size={19} /></NavBtn>
-              <NavBtn size={46} onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={18} /></NavBtn>
+              <NavBtn size={46} onClick={reset} disabled={!sans.length || !!focus} label={t("초기화")}><RotateCcw size={18} /></NavBtn>
             </div>
             {/* (사용자 요청) 봇과 직접 대국을 시작하는 PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·
                 초기화·뒤로·앞으로)과 같은 줄, 가운데에 작게 둔다. 전용 페이지(/play)를 새 히스토리
@@ -3914,8 +3914,8 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
                 있거나 sans에 이미 둔 수가 있으면) 이 버튼 자체를 비활성화하고 항상 빈 sans만 넘긴다. */}
             {/* (v0.6.6, 사용자 요청) PLAY 버튼 제거 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={19} /></NavBtn>
-              <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={19} /></NavBtn>
+              <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus} label={t("이전 수")}><ChevronLeft size={19} /></NavBtn>
+              <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus} label={t("다음 수")}><ChevronRight size={19} /></NavBtn>
             </div>
           </div>
         </div>

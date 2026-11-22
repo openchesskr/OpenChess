@@ -218,7 +218,7 @@ function RichDrift() {
 export function FooterMark({ note = "OpenChess" }) {
   return (
     <div style={{ textAlign: "center", padding: "44px 0 8px", userSelect: "none" }}>
-      <img className="ab-flicker" src="/OpenChessLogo.png" alt="OpenChess" draggable={false} style={{ display: "block", margin: "0 auto", height: "clamp(40px, 11vw, 104px)", width: "auto", maxWidth: "100%", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />
+      <img className="ab-flicker" src="/OpenChessLogo.webp" alt="OpenChess" draggable={false} style={{ display: "block", margin: "0 auto", height: "clamp(40px, 11vw, 104px)", width: "auto", maxWidth: "100%", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />
       <div style={{ marginTop: 12, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".2em", color: K.soft, opacity: 0.8 }}>{note}</div>
     </div>
   );

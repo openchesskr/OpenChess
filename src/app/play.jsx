@@ -1258,8 +1258,8 @@ function DeckmateButton({ fill = false }) {
         <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{t("데크메이트")}</span>
         <span style={{ fontSize: "clamp(10px, 2.4cqw, 15px)", fontWeight: 700, color: "rgba(90,58,34,.7)", lineHeight: 1.35, wordBreak: "keep-all" }}>{t("기보 카드를 뽑아 조합해 수를 두는 체스 카드 게임")}</span>
       </span>
-      {/* 출시 예정 — 어두운 반투명 막 */}
-      <span style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(24,14,7,.58)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {/* 출시 예정 — 어두운 반투명 막. (v0.8.0, BUG-203) 배지는 카드 정가운데가 아니라 왼쪽 그림(48%) 가운데에 둔다 — 정가운데면 제목·설명 글자를 덮었다. */}
+      <span style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(24,14,7,.58)", display: "flex", alignItems: "center", justifyContent: "center", paddingRight: "52%" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, background: "rgba(20,12,6,.72)", border: "1px solid rgba(236,203,134,.55)", color: T.brassHi, fontSize: "clamp(13px, 3.4cqw, 20px)", fontWeight: 900, letterSpacing: ".04em", boxShadow: "0 6px 18px -6px rgba(0,0,0,.7)" }}>
           <Lock size={15} color={T.brassHi} />{t("출시 예정")}
         </span>
@@ -5731,7 +5731,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
               {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
               <div className="flex items-center justify-center gap-3" style={{ marginTop: 2 }}>
                 <div style={{ position: "relative" }}>
-                  <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen}><Settings size={16} /></NavBtn>
+                  <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen} label={t("설정")}><Settings size={16} /></NavBtn>
                   {optionsOpen && (
                     <>
                       <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
@@ -5754,8 +5754,8 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                     </>
                   )}
                 </div>
-                <NavBtn onClick={stepBack} disabled={!canGoBack}><ChevronLeft size={17} /></NavBtn>
-                <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
+                <NavBtn onClick={stepBack} disabled={!canGoBack} label={t("이전 수")}><ChevronLeft size={17} /></NavBtn>
+                <NavBtn onClick={stepForward} disabled={!canGoForward} label={t("다음 수")}><ChevronRight size={17} /></NavBtn>
               </div>
             </aside>
             <AnimatePresence>
@@ -5826,7 +5826,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
             {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
             <div className="flex items-center justify-center gap-3" style={{ marginTop: 14 }}>
               <div style={{ position: "relative" }}>
-                <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen}><Settings size={16} /></NavBtn>
+                <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen} label={t("설정")}><Settings size={16} /></NavBtn>
                 {optionsOpen && (
                   <>
                     <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
@@ -5849,8 +5849,8 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                   </>
                 )}
               </div>
-              <NavBtn onClick={stepBack} disabled={!canGoBack}><ChevronLeft size={17} /></NavBtn>
-              <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
+              <NavBtn onClick={stepBack} disabled={!canGoBack} label={t("이전 수")}><ChevronLeft size={17} /></NavBtn>
+              <NavBtn onClick={stepForward} disabled={!canGoForward} label={t("다음 수")}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
           )

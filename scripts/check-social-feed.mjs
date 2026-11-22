@@ -53,7 +53,7 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   const hdr = (pz.match(/const headerNode = \([\s\S]*?\n  \);/) || [""])[0];
   ok(/<StreakCount [^\n]*\n\s*<NewPostButton [\s\S]*\{searchBarNode\}/.test(hdr), "1줄 연속 출석(왼쪽)·새 게시물(오른쪽), 2줄 검색창·필터 배치가 아님");
   ok(pz.indexOf("const searchBarNode = (") > 0 && pz.indexOf("const searchBarNode = (") < pz.indexOf("const headerNode = ("), "headerNode가 searchBarNode보다 먼저 만들어짐(정의 전 참조)");
-  ok(/placeholder=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz) && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
+  ok(/aria-label=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz)   /* (v0.8.0, BUG-204) 화면 안내(placeholder)는 짧게, 전체 설명은 aria-label */ && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
   ok(/const numInput = useMemo\(\(\) => \{ const q = searchQuery\.trim\(\)/.test(pz) && /if \(e\.key === "Enter" && numInput\) solveByInput\(\)/.test(pz), "검색어가 번호·날짜면 번호로 풀기로 동작해야 함");
   ok(/gridTemplateColumns: "minmax\(0, 1fr\) minmax\(0, 1fr\)"[^}]*width: "calc\(100vw - 32px\)"/.test(pz), "데스크톱 소셜 탭이 뷰포트 절반으로 나뉘지 않음");
   ok(/date=\{createdAt === undefined \? "" : dateOrToday\(createdAt\)\} keywords=\{keywords\}/.test(feed) && /date=\{dateOrToday\(post\.savedAt\)\}/.test(feed) && /<KwBox key=/.test(feed), "게시물 좌하단 날짜(없으면 오늘, v0.7.9) + 키워드 박스가 없음");
