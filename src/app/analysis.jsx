@@ -7,7 +7,7 @@ import { apiUrl } from "../lib/siteConfig.js";
 import { CommunityBlock } from "../components/communityBlock.jsx";
 import { BRASS_SCROLLBAR, BrassScrollStyle, MoreBelowHint } from "../components/brassScroll.jsx";
 import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
-import { LOOP } from "../lib/perfMode.js";
+import { LOOP, engineLineGapMs } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
@@ -866,15 +866,7 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
 const Q_MASCOT = { brilliant: ["kokoa", "celebrate"], best: ["milku", "great"], excellent: ["milku", "wink"], good: ["milku", "great"], book: ["milku", "wink"], only: ["milku", "surprise"], pending: ["milku", "think"], inaccuracy: ["kokoa", "think"], miss: ["kokoa", "surprise"], mistake: ["kokoa", "surprise"], blunder: ["kokoa", "angry"] };
 function mascotForKind(kind) { return Q_MASCOT[kind] || ["milku", "great"]; }
 /* ============================================================ 병합 훅 (Lichess 우선 + 사용자 착수 블록 + 백관점 평가) ============================================================ */
-// (v0.6.6, 사용자 요청: 분석 탭에서 수를 둘 때 렉 완화) 엔진이 depth마다 보내는 평가·라인 갱신을 최대 ~8회/초로 묶는다 — 갱신 하나마다 분석 탭 전체(3,500줄 컴포넌트)가
-// 다시 그려져, 수를 둔 직후 엔진이 depth를 쏟아낼 때 입력이 끊겼다. 마지막 값은 반드시 반영(trailing)하고, cancel()로 대기 중인 갱신을 버릴 수 있다(확정 결과가 먼저 들어간 뒤 옛 값이 덮지 않게).
-function throttled(fn, ms) {
-  let last = 0, timer = null, pend, has = false;
-  const run = () => { timer = null; last = performance.now(); if (has) { has = false; const a = pend; pend = undefined; fn(a); } };
-  const f = (a) => { pend = a; has = true; const w = ms - (performance.now() - last); if (w <= 0) run(); else if (!timer) timer = setTimeout(run, w); };
-  f.cancel = () => { if (timer) clearTimeout(timer); timer = null; has = false; pend = undefined; };
-  return f;
-}
+// (v0.6.6 → v0.8.0) 엔진 평가·라인 갱신을 묶던 throttled()는 useMergedMoves의 공용 박자(onTick)로 바꿨다 — 여러 갱신이 같은 타이머에서 한 번에 그려진다.
 function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortBy) {
   const node = snapNode(sans);
   const key = sans.join(" ");
@@ -902,6 +894,34 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
   const posCacheRef = useRef({ key: null, multiPromise: null, live: new Map() });
+  // (v0.8.0 렉 수정) 후보 수 평가(live) 갱신 모아 반영 — 예전엔 엔진 작업자들이 보내는 진행 줄마다(onMoveProgress, 간격 제한 없음)
+  //  setMoves를 불러 분석 탭 전체(보드·수 블록·레이아웃 애니메이션 측정)가 초당 10번 넘게 다시 그려졌다(휴대폰에서 보드가 잠깐 사라질 만큼 밀림).
+  //  이제 수별 최신 값만 모아 engineLineGapMs()(보통 150ms·가벼운 모드 280ms)마다 한 번만 반영한다. 포지션(key)이 바뀌면 모아 둔 값은 버린다.
+  // (v0.8.0 렉 수정) 공용 박자 — 후보 수 평가·평가 막대·엔진 라인·탐색 깊이 갱신을 같은 타이머 한 번에 몰아 실행한다.
+  //  예전엔 셋이 각자 150ms 타이머로 따로 반영돼, 한 번 그릴 것을 세 번에 나눠 그렸다(React는 같은 작업 안의 상태 변경만 한 번에 그린다).
+  const tickRef = useRef({ jobs: new Map(), timer: 0, last: 0 });
+  const onTick = useCallback((id, fn) => {
+    const T = tickRef.current;
+    T.jobs.set(id, fn);
+    if (T.timer) return;
+    const wait = Math.max(0, engineLineGapMs() - (performance.now() - T.last));
+    T.timer = setTimeout(() => { T.timer = 0; T.last = performance.now(); const jobs = [...T.jobs.values()]; T.jobs.clear(); jobs.forEach((f) => f()); }, wait);
+  }, []);
+  useEffect(() => () => clearTimeout(tickRef.current.timer), []);
+  const liveBatchRef = useRef({ key: null, map: new Map() });
+  const queueLive = useCallback((posKey, bySan, now) => {
+    const b = liveBatchRef.current;
+    if (b.key !== posKey) { b.key = posKey; b.map = new Map(); }
+    for (const k of Object.keys(bySan)) b.map.set(k, bySan[k]);
+    const flush = () => {
+      if (!b.map.size) return;
+      const m = b.map; b.map = new Map();
+      if (posCacheRef.current.key !== b.key) return;
+      setMoves((prev) => { let hit = false; const next = prev.map((x) => { const k = stripSuffix(x.san); if (!m.has(k)) return x; hit = true; return { ...x, live: m.get(k) }; }); return hit ? next : prev; });
+    };
+    if (now) { tickRef.current.jobs.delete("live"); flush(); }
+    else onTick("live", flush);
+  }, [onTick]);
   // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
   // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
   // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
@@ -1183,11 +1203,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             if (san) evBy[stripSuffix(san)] = pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite };
           } catch { }
         });
-        if (Object.keys(evBy).length) setMoves((prev) => prev.map((m) => { const hit = evBy[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+        if (Object.keys(evBy).length) queueLive(key, evBy);
       };
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); applyDepthEvals(raw); };
       if (!cache.thr) cache.thr = [];
-      const mkThr = (fn) => { const f = throttled(fn, 120); cache.thr.push(f); return f; };
+      // (v0.8.0 렉 수정) 120ms 고정 throttle 대신 공용 박자(onTick)에 최신 값만 올린다 — 같은 박자의 다른 갱신과 한 번에 그려진다.
+      const mkThr = (fn) => { const id = {}; const f = (a) => onTick(id, () => fn(a)); f.cancel = () => tickRef.current.jobs.delete(id); cache.thr.push(f); return f; };
       const cancelThr = () => cache.thr.forEach((f) => f.cancel());
       const thrP = mkThr(onEvalProgress), thrS = mkThr(streamLines);
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
@@ -1233,7 +1254,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           if (deepLines.length) {
             const deepEvBySan = {};
             deepLines.forEach((l) => { if (l.sans && l.sans.length) deepEvBySan[stripSuffix(l.sans[0])] = l.ev; });
-            setMoves((prev) => prev.map((m) => { const hit = deepEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+            queueLive(key, deepEvBySan, true);
           }
           // (v0.2.9 기능) 사용자 요청 — 세 번째 단계("third movetime")를 추가한다. 5초 심화 탐색이 끝난
           // 뒤에도 사용자가 이 포지션에 그대로 머물러 있다면, 같은 slot으로 한 번 더(이번엔 20초) 이어서
@@ -1250,7 +1271,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
               if (deeperLines.length) {
                 const deeperEvBySan = {};
                 deeperLines.forEach((l) => { if (l.sans && l.sans.length) deeperEvBySan[stripSuffix(l.sans[0])] = l.ev; });
-                setMoves((prev) => prev.map((m) => { const hit = deeperEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+                queueLive(key, deeperEvBySan, true);
               }
             }).catch(() => {});
           }
@@ -1270,7 +1291,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         const lineEvBySan = {};
         lines.forEach((l) => { if (l.sans && l.sans.length) lineEvBySan[stripSuffix(l.sans[0])] = l.ev; });
         cur = cur.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; });
-        setMoves((prev) => prev.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+        queueLive(key, lineEvBySan, true);
       }
       const curNonbook = () => cur.filter((m) => !m.book).length;
       if ((!isMaster || masterEmpty) && curNonbook() < 9) {
@@ -1331,7 +1352,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             // 승자를 함께 보존한다.
             const onMoveProgress = (partial) => {
               if (cancelled || !partial) return;
-              setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(partial) } : x));
+              queueLive(key, { [stripSuffix(san)]: mkLive(partial) });   // (v0.8.0 렉 수정) 진행 줄마다 그리지 않고 모아서
               // (v0.2.4 버그 수정) 이 후보 수 개별 평가는 여전히 depth 15 고정이다(즉각 반응 유지 목적,
               // 건드리지 않기로 함) — 그 depth를 "?" 도움말의 curDepth에 함께 반영하면, 후보 수가
               // 많아 이 depth-15 검색들이 자주 완료돼 값을 15로 계속 밀어붙이는 바람에, 정작 depth
@@ -1355,7 +1376,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
               if (!ev) cache.live.delete(san);
             }
             if (cancelled || !ev) continue;
-            setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
+            queueLive(key, { [stripSuffix(san)]: mkLive(ev) });
           }
         };
         await Promise.all(workers.map(runWorker));
@@ -2664,12 +2685,29 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   // 유저 통계·마스터 통계의 첫 대국 줄이 같은 y좌표에서 시작하도록, 더 위에 있는 쪽 기준으로 아래쪽 페이지에 여백을 넣는다(매 렌더 뒤 한 번 재서 바뀐 만큼만 반영).
   const spUser = useRef(null), spMaster = useRef(null), padsRef = useRef([0, 0]);
   const [pads, setPads] = useState([0, 0]);
-  useLayoutEffect(() => {
-    const els = [spUser.current, spMaster.current];
-    if (!els[0] || !els[1]) return;
-    const nat = els.map((el) => { const pg = el.closest("[data-fp-page]"); return pg ? el.getBoundingClientRect().top - pg.getBoundingClientRect().top : 0; });   // 여백 칸의 위쪽 = 여백을 넣기 전 대국 목록의 시작 높이
+  // (v0.8.0 렉 수정, check-render-perf) 예전엔 매 렌더 뒤 위치를 바로 읽어(강제 레이아웃) 엔진 갱신마다 레이아웃을 한 번 더 계산했다.
+  //  이제 두 페이지·여백 칸의 크기가 바뀔 때만(ResizeObserver 알림 = 레이아웃이 끝난 뒤) 다시 잰다. 관찰 대상이 바뀌면 다시 건다.
+  const padObsRef = useRef({ els: [null, null], ro: null });
+  useEffect(() => () => { const o = padObsRef.current; if (o.ro) o.ro.disconnect(); }, []);
+  useEffect(() => {
+    const els = [spUser.current, spMaster.current], o = padObsRef.current;
+    if (els[0] === o.els[0] && els[1] === o.els[1]) return;
+    if (o.ro) { o.ro.disconnect(); o.ro = null; }
+    o.els = els;
+    if (!els[0] || !els[1] || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const nat = els.map((el) => { const pg = el.closest("[data-fp-page]"); return pg ? el.getBoundingClientRect().top - pg.getBoundingClientRect().top : 0; });   // 여백 칸의 위쪽 = 여백을 넣기 전 대국 목록의 시작 높이
     const target = Math.max(nat[0], nat[1]), next = [Math.round(target - nat[0]), Math.round(target - nat[1])];
     if (next[0] !== padsRef.current[0] || next[1] !== padsRef.current[1]) { padsRef.current = next; setPads(next); }
+    };
+    o.ro = new ResizeObserver(measure);
+    // 여백 칸 위에 있는 내용(같은 페이지 안의 앞 형제들, 조상 쪽 앞 형제들)의 크기가 바뀌면 여백 칸의 높이(위치)가 바뀌므로 그것들을 관찰한다
+    //  (페이지 자체는 가로 flex에서 가장 긴 페이지 높이로 늘어나 있어 내용이 바뀌어도 크기가 안 바뀔 수 있다).
+    els.forEach((el) => {
+      o.ro.observe(el);   // 처음 한 번 재기(관찰을 시작하면 알림이 한 번 온다)
+      const pg = el.closest("[data-fp-page]"); let x = el, n = 0;
+      while (x && x !== pg && n < 60) { for (let sib = x.previousElementSibling; sib && n < 60; sib = sib.previousElementSibling, n++) o.ro.observe(sib); x = x.parentElement; }
+    });
   });
   const MY_GAMES_PAGE_SIZE = 10;
   const [myGamesPage, setMyGamesPage] = useState(0);
@@ -3025,17 +3063,22 @@ function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 40 })
   const [open, setOpen] = useState(false), [over, setOver] = useState(false);
   const ref = useRef(null);
   useEffect(() => { setOpen(false); }, [resetKey]);
-  useLayoutEffect(() => {
-    const el = ref.current; if (!el || open) return undefined;
-    const check = () => setOver(el.scrollHeight > el.clientHeight + 1);
-    check();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(check); ro.observe(el);
+  // (v0.8.0 렉 수정) 넘침 검사는 ResizeObserver 알림 안에서만 한다 — 안쪽 글 상자(inner)의 실제 높이가 바뀔 때만 알림이 오고,
+  //  알림은 브라우저가 레이아웃을 마친 뒤라 강제 레이아웃이 없다. 예전엔 children(매번 새 JSX)을 의존성으로 둔 layout effect에서
+  //  scrollHeight를 읽어, 분석 탭이 엔진 갱신으로 다시 그려질 때마다 레이아웃을 강제로 다시 계산했다(휴대폰 렉의 한 원인).
+  const innerRef = useRef(null);
+  useEffect(() => {
+    const inner = innerRef.current;
+    if (!inner) return undefined;
+    const limit = lines * lineH + 1;
+    if (typeof ResizeObserver === "undefined") { setOver(inner.offsetHeight > limit); return undefined; }
+    const ro = new ResizeObserver((entries) => { const e = entries[entries.length - 1]; setOver(e.contentRect.height > limit); });
+    ro.observe(inner);
     return () => ro.disconnect();
-  }, [children, resetKey, open]);
+  }, [lines, lineH]);
   return (
     <div style={{ position: "relative", paddingRight: padRight }}>
-      <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}>{children}</p>
+      <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}><span ref={innerRef} style={{ display: "block" }}>{children}</span></p>
       {!open && over && (
         <button onClick={() => setOpen(true)} className="press" style={{ position: "absolute", right: padRight, bottom: 0, height: lineH, paddingLeft: 22, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap", color: T.ink, background: "linear-gradient(to right, rgba(247,240,222,0), " + T.paper + " 22px)" }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: "#9A8F7C" }}>{t("자세히 보기")}</span>

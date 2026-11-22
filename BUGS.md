@@ -10,6 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-206 | P2 | 휴대폰 분석 탭 렉 — 수를 두면 보드가 잠깐 통째로 사라질 만큼 밀림(사용자 화면 녹화). 후보 수 평가가 엔진 진행 줄마다(간격 제한 없음) 분석 탭 전체를 다시 그리고(10초에 103번), 그때마다 보드 기물 32개·수 블록을 새로 그리며 ClampText·KeywordScroll·MarqueeText·집중 분석 여백 계산이 레이아웃을 강제로 다시 계산(약 1초) | 수정 완료(v0.8.0) · 후보 수 평가 모아 반영(queueLive)·평가/라인/깊이 갱신 공용 박자(onTick), PieceGlyph memo, 넘침·폭 재기 ResizeObserver로 · `check-render-perf` | 2026-11-23 |
 | BUG-205 | P3 | 휴대폰에서 처음 들어온 사용자에게 "옆으로 밀어서 이동" 안내가 분석·플레이·소셜·학습 탭 오른쪽 위 제목·"새 게시물" 버튼을 덮음(누름은 통과하지만 글자가 가려짐). 한 번 넘기기 전까지 계속 보임 | 수정 완료(v0.8.0) · 안내를 4.5초 보여 준 뒤 이번 방문 동안 접음(넘기면 영구히 사라지는 규칙은 그대로) | 2026-11-22 |
 | BUG-204 | P3 | 번역·문구 잘림: 스페인어 소셜 필터 칩만 소문자 "partida"(다른 칩은 대문자 시작), 소셜 검색창 안내 문구가 모든 언어에서 끝이 잘림("…일일 퍼즐 날짜 입"), 스페인어 학습 경로 단계 설명이 말줄임 없이 잘림 | 수정 완료(v0.8.0) · en·es "대국" 대문자, 검색창 안내 짧게(전체 설명은 aria-label·title) · 학습 단계 설명은 잘림이 아니라 처음 스크롤 위치에서 아래 레슨 카드에 가린 것(내리면 보임)으로 확인, 변경 없음 | 2026-11-22 |
 | BUG-203 | P3 | 플레이 탭 데크메이트 카드의 "출시 예정" 배지가 카드 한가운데 놓여 제목("데크메이트")과 설명 글자를 가림(데스크톱·모든 언어) | 수정 완료(v0.8.0) · 배지를 왼쪽 그림 영역 가운데로 | 2026-11-22 |
@@ -2112,3 +2113,21 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **제안**: 안내를 페이지 아래쪽 여백이나 점 표시 줄로 옮기거나 몇 초 뒤 자동으로 접기.
 - **수정 내용**: 안내를 4.5초 보여 준 뒤 서서히 사라지게(AnimatePresence) 했다. 넘기면 다시 안 보이는 기존 규칙(oc_learn_pager_seen)은 그대로, 넘기지 않은 사용자는 다음 방문 때 다시 4.5초 본다.
 - **검증**: 휴대폰 폭 /play에서 1.5·2.5·4초엔 보이고 6.5초엔 사라짐(Playwright).
+
+### BUG-206 · [P2] 휴대폰 분석 탭 렉(수를 두면 보드가 잠깐 사라짐)
+- **상태**: 수정 완료(v0.8.0)
+- **발견**: 사용자 제보(휴대폰 Chrome 화면 녹화, 운영 사이트 v0.7.9). 1.Nf3 d5 2.d4를 두는 5초 동안 화면이 자주 멈추고, 2.d4 직후 보드 전체가 빈 칸으로 그려졌다가(수 배지만 보임) 다시 나타남.
+- **재현**: Playwright Pixel 7 에뮬레이션 + CPU 4배 감속, `/analysis`에서 수 4개를 두는 15초 동안 긴 작업(50ms 넘는 멈춤) 49번·합계 3.9초, 최대 프레임 간격 333ms. 같은 조건의 렌더 집계(React fiber 커밋 훅)에서 수 3개 9.5초 동안 커밋 198번, 분석 탭(AnalysisTab) 103번, 보드 기물(PieceGlyph) 3,616번 다시 그려짐. CPU 프로파일에서 `get scrollHeight` 약 750ms(ClampText).
+- **원인**:
+  1. `useMergedMoves`(src/app/analysis.jsx) — 후보 수 하나를 평가하는 엔진 작업자의 진행 콜백(`onMoveProgress`)이 info 줄마다 간격 제한 없이 `setMoves`를 불렀다. 여러 작업자가 동시에 돌아 분석 탭 전체가 초당 10번 넘게 다시 그려졌다.
+  2. 평가 막대(posEval)·엔진 라인·탐색 깊이 갱신은 각자 120ms throttle 타이머를 써서 같은 순간의 갱신도 서로 다른 작업에서 반영돼, 한 번 그릴 것을 여러 번에 나눠 그렸다.
+  3. 분석 탭이 다시 그려질 때마다 보드 기물 32개(SVG·이미지)가 props가 같아도 전부 다시 그려졌다.
+  4. `ClampText`가 의존성에 children(매번 새 JSX)을 둔 useLayoutEffect에서 `scrollHeight`를 읽어 렌더마다 강제 레이아웃. `KeywordScroll`·`MarqueeText`도 글이 바뀔 때 layout effect에서 `offsetWidth`를 바로 읽음. 집중 분석의 통계 여백 맞춤도 의존성 없는 layout effect에서 매 렌더 `getBoundingClientRect`.
+- **수정 내용**:
+  1. `queueLive(key, {수: 평가})` — 수별 최신 평가만 모아 한 번에 `setMoves`. 포지션이 바뀌면 모아 둔 값은 버림. 확정 결과(심화 탐색)는 즉시 반영.
+  2. `onTick` 공용 박자 — 후보 수 평가·평가 막대·엔진 라인·탐색 깊이 갱신을 같은 타이머(engineLineGapMs: 보통 150ms·가벼운 모드 280ms)에서 실행해 React가 한 번에 그린다. `throttled()` 삭제.
+  3. `PieceGlyph`를 `React.memo`(style은 얕은 비교)로.
+  4. ClampText는 안쪽 글 상자를, KeywordScroll·MarqueeText는 바깥·글 묶음을 ResizeObserver로 관찰해 알림 안에서만 잰다(레이아웃이 끝난 뒤라 강제 레이아웃 없음). 집중 분석 여백 맞춤도 여백 칸 위 내용의 크기 변화를 ResizeObserver로 관찰.
+- **안전장치**: `scripts/check-render-perf.mjs`(prebuild) — useMergedMoves에서 live를 setMoves로 바로 반영 금지·queueLive/onTick 존재·mkThr가 onTick 사용·throttled() 재도입 금지, PieceGlyph memo, src 전체에서 의존성에 children을 둔 useLayoutEffect·의존성 없는 useLayoutEffect의 레이아웃 읽기 금지, 세 부품의 ResizeObserver 사용. 처음 돌렸을 때 집중 분석 여백 맞춤(위 4번)을 추가로 잡아 함께 고쳤다.
+- **검증**: 같은 조건에서 분석 탭 다시 그리기 103 → 69번, PieceGlyph 3,616 → 0번, 커밋 198 → 122번, ClampText·KeywordScroll·MarqueeText 강제 레이아웃 약 1초 → 0. 수정 전·후 빌드를 번갈아 3번씩 잰 Performance 지표에서 스크립트 시간 3.4초 → 3.1초. 긴 작업 횟수는 이 컨테이너(4코어, 엔진 작업자와 CPU 공유)에서 측정마다 편차가 커서(같은 빌드 910~2,648ms) 확정 수치로 쓰지 않음. ClampText "자세히 보기"·KeywordScroll 흐름 애니메이션은 글을 늘려 넘치게 했을 때 그대로 켜짐(Playwright), 페이지 오류 0건. `npm run build` 통과.
+- **남은 점**: 헤드리스 Chromium은 GPU 래스터를 재현하지 못해, 보드가 비어 보이던 현상(타일 래스터 지연)의 그리기 쪽 비용(기물 이미지 64장의 drop-shadow 필터 등)은 측정하지 못했다. 실제 휴대폰에서 확인 후에도 남으면 다음 단계로 휴대폰에서 기물 그림자 필터를 끄거나 화살표 층을 분리하는 방안을 검토.

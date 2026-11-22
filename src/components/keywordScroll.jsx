@@ -1,4 +1,4 @@
-import React, { useRef, useState, useLayoutEffect, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 import { t } from "../lib/i18n.js";
@@ -99,16 +99,18 @@ export function KeywordScroll({ kws, chipStyle }) {
   const [overflow, setOverflow] = useState(false);
   const [period, setPeriod] = useState(0);   // 한 묶음 길이(px) — CSS 애니메이션이 이만큼 이동하면 제자리로 돌아온다
   const sig = kws.join(",");
-  useLayoutEffect(() => {
+  // (v0.8.0 렉 수정) 폭 재기는 ResizeObserver 알림 안에서만 한다(브라우저가 레이아웃을 마친 뒤라 강제 레이아웃이 없다).
+  //  예전엔 키워드가 바뀔 때마다 layout effect에서 offsetWidth를 바로 읽어, 분석 탭이 그려지는 도중 레이아웃을 한 번 더 강제로 계산했다.
+  //  묶음(one)도 함께 관찰해 키워드 글자 폭이 바뀌면 다시 잰다. 알림은 그리기 전에 오므로 깜빡임은 없다.
+  useEffect(() => {
     const el = ref.current, one = setRef.current;
-    if (!el || !one) return;
+    if (!el || !one) return undefined;
     const check = () => { const w = one.offsetWidth; setOverflow(w > el.clientWidth + 1); setPeriod(w + KW_GAP); };
-    check();
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof ResizeObserver === "undefined") { check(); return undefined; }
     const ro = new ResizeObserver(check);
-    ro.observe(el);
+    ro.observe(el); ro.observe(one);
     return () => ro.disconnect();
-  }, [sig]);
+  }, [sig, kws.length > 0]);
   if (!kws.length) return null;
   const set = (key, extra) => (
     <div key={key} ref={key === "a" ? setRef : null} aria-hidden={extra ? "true" : undefined} style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, flexShrink: 0 }}>
@@ -132,12 +134,12 @@ export function MarqueeText({ children, height = 18, style }) {
   const ref = useRef(null), oneRef = useRef(null);
   const [over, setOver] = useState(false), [period, setPeriod] = useState(0);
   const sig = typeof children === "string" ? children : "";
-  useLayoutEffect(() => {
+  // (v0.8.0 렉 수정) KeywordScroll과 같이 폭 재기는 ResizeObserver 알림 안에서만(강제 레이아웃 없음). 글 묶음(one)도 관찰해 글이 바뀌면 다시 잰다.
+  useEffect(() => {
     const el = ref.current, one = oneRef.current; if (!el || !one) return undefined;
     const check = () => { const w = one.offsetWidth; setOver(w > el.clientWidth + 1); setPeriod(w + MARQUEE_GAP); };
-    check();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(check); ro.observe(el);
+    if (typeof ResizeObserver === "undefined") { check(); return undefined; }
+    const ro = new ResizeObserver(check); ro.observe(el); ro.observe(one);
     return () => ro.disconnect();
   }, [sig]);
   return (
