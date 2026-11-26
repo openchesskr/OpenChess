@@ -5,7 +5,7 @@
  *  (scripts/lib/mateThemes.mjs — Lichess 퍼즐 테마 이름과 같다)를 붙여 게임이 테마를 고르게 뽑게 한다.
  *
  *  소스 두 가지(둘 다 같은 검증을 거친다 — 공격 측의 매 수가 유일한 정답이고 수비 측은 엔진 최선 응수, 마지막은 chess.js 체크메이트):
- *   ① 마스터 대국(기본) — public/master-games.json 12만여 판에서, 마지막 --window 플라이 안의 포지션을 Stockfish로 분석해 강제
+ *   ① 마스터 대국(기본) — data/master-games.json 12만여 판에서, 마지막 --window 플라이 안의 포지션을 Stockfish로 분석해 강제
  *      메이트(1~4수)를 뽑는다. 한 대국에서 최대 --max-per-game개. 외부망이 필요 없다. 코어 수만큼 병렬(--workers).
  *        node scripts/build-attack-positions.mjs [--workers=4] [--window=20] [--max-per-game=2] [--limit-games=N]
  *      진행 결과는 scripts/.attack-cache/found.jsonl에 계속 쌓이므로 중간에 멈췄다 다시 돌려도 이어서 한다(--fresh로 처음부터).
@@ -98,7 +98,7 @@ async function worker(idx, total) {
   const windowPlies = parseInt(arg("window", "20"), 10);
   const maxPerGame = parseInt(arg("max-per-game", "2"), 10);
   const limit = parseInt(arg("limit-games", "0"), 10);
-  const master = JSON.parse(readFileSync("public/master-games.json", "utf8"));
+  const master = JSON.parse(readFileSync("data/master-games.json", "utf8"));
   let games = master.games.filter((g) => g.result === "1-0" || g.result === "0-1");
   // 결정론적 셔플(시드 고정) — 다시 돌려도 같은 순서라 캐시와 함께 이어서 할 수 있다.
   let s = 530 >>> 0; const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };

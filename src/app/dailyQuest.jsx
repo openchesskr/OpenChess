@@ -1,6 +1,6 @@
 // (v0.7.4, 사용자 요청) 일일 퀘스트 카드 — 학습 탭에서 플레이 탭으로 옮기면서 학습 탭 전용 파일(learn.jsx)에서 분리했다.
 // KST 자정 갱신 카운트다운, 오프닝 퀘스트 개별 리롤, 완료 표기는 이 카드가 화면에 나타날 때 애니메이션으로 공개(seen 플래그). 로직·디자인은 v0.7.3 그대로.
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Check, RotateCcw, Puzzle, CalendarCheck, BookMarked, Timer, Sparkles, ListChecks, Swords, Lock, ChevronLeft, ChevronRight } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { motion } from "framer-motion";
 import { SITE_FONT } from "../components/engineLines.jsx";
@@ -40,6 +40,14 @@ function fmtRemainHMS(ms) {
 // fill(v0.7.8): 데스크톱 플레이 탭에서 옆의 일반 대국·데크메이트 블록과 위아래 끝을 맞추려고 칸 높이를 채운다(남는 높이는 퀘스트 줄 사이에 고르게).
 export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight, fill = false }) {
   const dq = dailyQuest;
+  // (v0.8.0 버그 수정) 하이라이트 줄로의 스크롤은 배지를 누를 때(nonce) 한 번만 — 예전엔 ref 콜백(렌더마다 새 함수)에서 scrollIntoView를 불러,
+  //  카운트다운 때문에 1초마다 다시 그려질 때마다 그 줄로 다시 끌려가 다른 곳으로 스크롤할 수 없었다.
+  const hiRef = useRef(null);
+  useEffect(() => {
+    if (!highlight) return undefined;
+    const id = setTimeout(() => { try { if (hiRef.current) hiRef.current.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" }); } catch { } }, 220);
+    return () => clearTimeout(id);
+  }, [highlight && highlight.nonce]);
   const [remain, setRemain] = useState(msUntilKstMidnight());
   useEffect(() => { const iv = setInterval(() => setRemain(msUntilKstMidnight()), 1000); return () => clearInterval(iv); }, []);
   // (버그 수정) questOpeningMovesText는 표에 없는 이름이면 오프닝 트리를 처음부터 훑는(BFS) 탐색을
@@ -71,11 +79,14 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
     const done = shownDone(k), flash = clearing(k);
     const tone = done ? SAGE : hue;
     return (
-      <motion.div ref={highlighted ? (el) => el && el.scrollIntoView({ behavior: "smooth", block: "center" }) : undefined}
-        layout={false} animate={flash ? { scale: [1, 1.03, 1] } : { scale: 1 }} transition={{ duration: 0.45 }}
-        className={highlighted ? "dq-hi" : undefined}
-        style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12,
-          background: done ? "#E4EFD8" : SURFACE, border: "1px solid " + (highlighted ? BRASS : done ? "#A9C589" : LINE) }}>
+      <motion.div ref={highlighted ? hiRef : undefined}
+        layout={false}
+        // (v0.8.0, 사용자 요청) 분석 탭 퀘스트 배지로 들어왔을 때 — 두 번 튀어 오르고, 금빛 띠가 테두리를 따라 돌며, 위에 "분석 탭에서 고른 퀘스트" 표시
+        animate={flash ? { scale: [1, 1.03, 1] } : highlighted ? { scale: [1, 1.035, 1, 1.035, 1] } : { scale: 1 }}
+        transition={highlighted && !flash ? { duration: 1.3, delay: 0.45, ease: "easeInOut" } : { duration: 0.45 }}
+        style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12, marginTop: highlighted ? 12 : 0,
+          background: done ? "#E4EFD8" : highlighted ? "#FFF8E6" : SURFACE, border: (highlighted ? "2px solid " : "1px solid ") + (highlighted ? BRASS : done ? "#A9C589" : LINE) }}>
+        {highlighted && <QuestSpotlight />}
         <span style={{ position: "relative", width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
           {done ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Icon size={20} color={tone} strokeWidth={1.75} />}
           {flash && <Sparkles size={15} color={BRASS} className="dq-spark" style={{ position: "absolute", top: -7, right: -7 }} />}
@@ -97,7 +108,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
   };
   return (
     <div style={{ marginBottom: fill ? 0 : 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E", ...(fill ? { height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" } : null) }}>
-      <style>{"@keyframes dqSpark{0%{transform:scale(.3) rotate(0);opacity:0}40%{opacity:1}100%{transform:scale(1.4) rotate(90deg);opacity:0}} .dq-spark{animation:dqSpark .9s ease-out 1} @keyframes dqHi{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 5px rgba(201,164,92,.4)}} .dq-hi{animation:dqHi 1.1s ease-in-out 3} @keyframes dqGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 4px rgba(201,164,92,.32)}} .dq-glow{animation:dqGlow 2.2s ease-in-out infinite} html[data-perf=\"lite\"] .dq-glow{animation:none}"}</style>
+      <style>{"@keyframes dqSpark{0%{transform:scale(.3) rotate(0);opacity:0}40%{opacity:1}100%{transform:scale(1.4) rotate(90deg);opacity:0}} .dq-spark{animation:dqSpark .9s ease-out 1} @keyframes dqGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 4px rgba(201,164,92,.32)}} .dq-glow{animation:dqGlow 2.2s ease-in-out infinite} html[data-perf=\"lite\"] .dq-glow{animation:none}"}</style>
       {/* 머리띠 */}
       <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE, flexWrap: "wrap" }}>
         <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
@@ -220,5 +231,20 @@ export function PlayQuestCard({ playQuest, loggedIn, fill = false }) {
       </div>
       <p style={{ margin: 0, padding: "0 14px 12px", fontSize: 11, lineHeight: 1.5, color: MUTED }}>{t("장의 퀘스트를 모두 클리어하면 더 어려운 다음 장이 열림. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨")}{!loggedIn ? " · " + t("보상은 로그인 후 지급") : ""}</p>
     </div>
+  );
+}
+// (v0.8.0, 사용자 요청) 분석 탭 수 블록의 퀘스트 배지로 들어온 퀘스트 줄 표시 — 테두리를 따라 도는 금빛 띠(.dq-ring)와 줄 위의 이름표.
+//  띠는 이 줄이 하이라이트인 동안 계속 돌아 다른 줄과 확실히 구분된다(가벼운 모드에선 세 바퀴만). 아이콘은 파셋 세트(CLAUDE.md).
+function QuestSpotlight() {
+  return (
+    <>
+      {/* 테두리를 도는 빛 — conic-gradient 띠를 mask로 테두리 모양만 남긴다(카드 면은 단색 규칙 그대로, 이 효과만 덧씌움) */}
+      <style>{".dq-ring{position:absolute;inset:-5px;border-radius:16px;padding:3px;pointer-events:none;overflow:hidden;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)} .dq-ring>i{position:absolute;left:50%;top:50%;width:160%;aspect-ratio:1;translate:-50% -50%;background:conic-gradient(from 0deg,rgba(245,213,138,0) 0deg,#F5D58A 50deg,#C9A45C 95deg,rgba(201,164,92,0) 140deg,rgba(245,213,138,0) 360deg);animation:dqRing 1.6s linear infinite} @keyframes dqRing{to{rotate:360deg}} @keyframes dqTagIn{0%{opacity:0;transform:translateY(6px) scale(.85)}60%{opacity:1;transform:translateY(-2px) scale(1.04)}100%{opacity:1;transform:none}} .dq-tag{animation:dqTagIn .5s .25s cubic-bezier(.2,.9,.3,1.2) both} html[data-perf=\"lite\"] .dq-ring>i{animation-iteration-count:3}"}</style>
+      <span className="dq-ring" aria-hidden="true"><i /></span>
+      <span className="dq-tag" style={{ position: "absolute", left: 10, top: -13, display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 9px 2px 6px", borderRadius: 999,
+        background: "#E8C46A", border: "1.5px solid #FFF8E6", color: "#3A2516", fontSize: 10.5, fontWeight: 900, fontFamily: SITE_FONT, whiteSpace: "nowrap", boxShadow: "0 3px 8px -3px rgba(90,58,34,.6)", zIndex: 2 }}>
+        <ListChecks size={12} color="#3A2516" />{t("분석 탭에서 고른 퀘스트")}
+      </span>
+    </>
   );
 }

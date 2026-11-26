@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.6.4) 마스터 대국 DB(public/master-games.json) → 마스터별 스타일 특징 벡터 src/data/masterStyles.json
+/** (v0.6.4) 마스터 대국 DB(data/master-games.json) → 마스터별 스타일 특징 벡터 src/data/masterStyles.json
  *  대상: 도감 DB 마스터 900명(src/data/dbMasters.json) 중 대국 MIN_GAMES판 이상. 특징 계산은 앱과 같은 src/lib/masterStyle.js의 styleFeatures를 쓴다(앱이 계산하는 내 특징과 같은 정의여야 비교가 맞다).
  *  항목: [표시 이름("성, 이름"), 대국 수(그 선수로 합친 전체), 최고 엘로, 특징 벡터 14개(소수 3자리, 분모 없으면 null)]. mean/std는 이 선수들 전체의 평균·표준편차.
  *  실행: node scripts/build-master-styles.mjs  (build-db-masters.mjs 뒤에) */
@@ -8,7 +8,7 @@ import { styleFeatures, STYLE_KEYS, RETREAT_GAMES_BUILD } from "../src/lib/maste
 import { peopleIndex, bestName } from "./lib/masterNames.mjs";
 
 const MIN_GAMES = 120;
-const db = JSON.parse(readFileSync(new URL("../public/master-games.json", import.meta.url), "utf8")).games;
+const db = JSON.parse(readFileSync(new URL("../data/master-games.json", import.meta.url), "utf8")).games;
 const top = JSON.parse(readFileSync(new URL("../src/data/dbMasters.json", import.meta.url), "utf8")).masters;
 // build-db-masters.mjs와 같은 이름 합치기(scripts/lib/masterNames.mjs — v0.7.7 BUG-152부터 FIDE 동명이인 숫자 표지·활동 연도까지 같은 규칙)
 const ix = peopleIndex();

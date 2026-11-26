@@ -3,7 +3,7 @@
  *  예전엔 openings.json 트리 노드(3,985곳)마다 최대 500판만 미리 뽑아 둔 index를 써서, 트리 밖 포지션의 대국은 있어도 못 찾고 1.e4도 500판에서 잘렸다.
  *  이제 어떤 포지션이든 "그 수순으로 시작하는 모든 대국"을 상한 없이 찾아야 한다.
  *  ① 합성 데이터: 접두사 일치·토큰 경계(Qa1 vs Qa1b2)·체크 기호 무시·수순 끝 대국·빈 수순(전체)·없는 수순.
- *  ② 실제 DB(public/master-games.json): 무작위 수순들을 전수 비교(brute force)와 대조하고, 1.e4 이후 대국이 예전 상한(500)을 넘는지 확인한다.
+ *  ② 실제 DB(data/master-games.json): 무작위 수순들을 전수 비교(brute force)와 대조하고, 1.e4 이후 대국이 예전 상한(500)을 넘는지 확인한다.
  *  ③ 통계: staticMasterStatsFor의 승·무·패 합과 다음 수 합이 대국 수와 맞는다.
  *  ④ 선수 풀네임: "Carlsen,M" → "Magnus Carlsen"(masterFullName.js).
  *  실행: node scripts/check-master-prefix.mjs */
@@ -31,7 +31,7 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.pus
 }
 // ② 실제 DB
 {
-  const data = JSON.parse(readFileSync(new URL("../public/master-games.json", import.meta.url), "utf8"));
+  const data = JSON.parse(readFileSync(new URL("../data/master-games.json", import.meta.url), "utf8"));
   const strip = (x) => String(x || "").replace(/[+#]/g, "");
   const brute = (sans) => { const key = sans.map(strip).join(" "); const out = []; data.games.forEach((g, i) => { const m = strip(g.moves); if (m === key || m.startsWith(key + " ")) out.push(i); }); return out; };
   for (const sans of [["e4"], ["d4", "Nf6", "c4"], ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6"], ["Nf3", "d5", "g3", "Nf6", "Bg2", "e6", "O-O", "Be7", "d3"]]) {

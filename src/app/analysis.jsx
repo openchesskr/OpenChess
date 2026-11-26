@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할 · v0.7.3 learn.jsx → analysis.jsx) 'analysis'(분석 탭) 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
+import { lichessFetchWithRetry, lichessForeground, LICHESS_API, masterGamesFor, masterGameMoves } from "../lib/lichessApi.js";
 import { autoMoveKeywords, blockKeywords } from "../lib/moveKeywords.js";
 import { tilePuzzleTheme } from "../lib/matePuzzle.js";
 import { apiUrl } from "../lib/siteConfig.js";
@@ -23,7 +23,7 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus, MoreVertical } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { ListChecks, Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus, MoreVertical } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -33,7 +33,7 @@ import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { BestMoveJumpButton, ListPager, NavBtn } from "../components/uiPrimitives.jsx";
 import { playMoveSfx } from "../lib/prefs.js";
-import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick, usersProfiles } from "./common.jsx";
+import { kwSettled, AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick, usersProfiles } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
@@ -78,29 +78,22 @@ async function fetchDevMasterGames(sans) {
     }));
 }
 // (기능) 외부 대국 데이터베이스(선수/이벤트/오프닝 묶음)에서 뽑아낸 정적 마스터 대국 —
-// scripts/build-master-games.mjs로 public/master-games.json 생성. Lichess 마스터 DB 표본이
+// scripts/build-master-games.mjs로 data/master-games.json 생성. Lichess 마스터 DB 표본이
 // 적은 포지션을 보충하려고 만들었지만, 지금은 "출처 구분 없이 항상 합쳐서 보여주기"로 정해서
 // 매번 Lichess·개발자 추가분과 함께 합친다. 최초 1회만 fetch해서 메모리에 캐싱 — 파일이 몇 MB급이라
 // 초기 번들에는 안 넣고 마스터 대국을 처음 조회할 때만 지연 로드한다.
 // Lichess 마스터 DB + 개발자 추가분 + 외부 정적 데이터를 한 목록으로 합친다 —
 // 화면(FocusPanel)에서 출처를 구분하지 않는다.
 async function fetchAllMasterGames(sans, count = 15) {
-  const [lichessRes, dev, staticData] = await Promise.all([
+  // (v0.8.0) 정적 DB는 필요한 조각만 받는다(lib/lichessApi.js masterGamesFor) — 2수 이하 수순은 대표 대국(sample)과 정확한 통계.
+  const [lichessRes, local] = await Promise.all([
     fetchMasterTopGames(sans, count).catch(() => ({ games: [], stats: null })),
-    fetchDevMasterGames(sans).catch(() => []),
-    loadMasterGameData(),
+    masterGamesFor(sans),
   ]);
-  // (v0.6.6) 정적 DB는 접두사 색인으로 이 포지션 이후의 모든 대국을 상한 없이 가져온다(staticMasterGamesFor). Lichess 대표 대국(최대 15판)·개발자 추가분은
-  // 정적 DB와 같은 대국(두 선수·연도·결과가 같음)일 때만 빼고 합친다 — 정적 DB 안의 대국끼리는 절대 합치지 않는다(같은 두 선수가 한 해에 여러 번 둘 수 있음).
-  const gameKey = (g) => normalizePlayerKey(g.white && g.white.name) + "|" + normalizePlayerKey(g.black && g.black.name) + "|" + (g.year || "") + "|" + (g.winner || "d");
-  const staticGames = staticMasterGamesFor(sans, staticData);
-  const inStatic = new Set(staticGames.map(gameKey));
-  // (v0.6.6, 사용자 요청) Lichess 대표 대국은 대회 정보가 없어 마스터 통계 목록에서 뺀다(통계 숫자만 Lichess 집계를 쓴다).
-  const games = staticGames;   // (v0.6.6, 사용자 요청) 개발자가 직접 추가한 대국도 대회 정보가 없어 마스터 통계에서 뺀다
-  // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 전체에서 직접 센다(오프라인·Lichess 장애 때도 동작).
+  // (v0.6.6, 사용자 요청) Lichess 대표 대국·개발자 추가분은 대회 정보가 없어 마스터 통계 목록에서 뺀다 — 목록은 정적 DB만(통계 숫자만 Lichess 집계).
+  // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 집계(오프라인·Lichess 장애 때도 동작).
   const ls = lichessRes.stats, lichessOk = ls && ls.white + ls.draws + ls.black > 0;
-  const stats = lichessOk ? ls : (staticData ? staticMasterStatsFor(sans, staticData) : null);
-  return { games, stats };
+  return { games: local.games, stats: lichessOk ? ls : local.stats, total: local.total, sample: local.sample };
 }
 async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating, year, pgn, sans, result }) {
   await sbInsert("master_games_dev", {
@@ -136,10 +129,9 @@ async function fetchAnyMasterGamePgn(id) {
     return rows[0].sans;
   }
   if (typeof id === "string" && id.startsWith("extm_")) {
-    const data = await loadMasterGameData();
-    const g = data && data.games[+id.slice(5)];
-    if (!g) throw new Error("not-found");
-    return g.moves.split(" ");
+    const mv = await masterGameMoves(+id.slice(5));   // (v0.8.0) 그 대국이 든 조각만 받는다
+    if (!mv) throw new Error("not-found");
+    return mv;
   }
   return fetchMasterGamePgn(id);
 }
@@ -796,8 +788,9 @@ function QuestTag({ onClick }) {
       </motion.span>
       {/* 아이콘 원 */}
       <motion.span initial={{ opacity: 0, transform: "scale(0.3)" }} animate={{ opacity: 1, transform: "scale(1)" }} transition={{ duration: 0.32, ease: [0.2, 0.9, 0.3, 1.35] }}
-        style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform, opacity" }}>
-        <MaterialIcon name="assignment" size={12} color="#241509" />
+        style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", background: "linear-gradient(180deg,#A8842F,#6E5220)", border: "2px solid " + T.paper, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform, opacity" }}>
+        {/* (v0.8.0, 사용자 요청) 아이콘을 밝은 색으로 — 짙은 금색 원 위에 밝은 크림색 퀘스트 목록 아이콘(파셋 세트) */}
+        <ListChecks size={12} color="#FFF4D6" />
       </motion.span>
     </Tag>
   );
@@ -1200,7 +1193,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           if (!pv || !pv.uci || (pv.mate == null && pv.cp == null)) return;
           try {
             const san = uciToSan(liveBoard, pv.uci, liveColor);
-            if (san) evBy[stripSuffix(san)] = pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite };
+            // (v0.8.0) 탐색 도중의 값 — prov(임시) 표시: 등급·정렬은 바로 반영하되 수 키워드(LOW-LEVEL 등)는 확정 값만 쓴다
+            if (san) evBy[stripSuffix(san)] = pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate), prov: true } : { cp: pv.cp * baseWhite, prov: true };
           } catch { }
         });
         if (Object.keys(evBy).length) queueLive(key, evBy);
@@ -1352,7 +1346,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             // 승자를 함께 보존한다.
             const onMoveProgress = (partial) => {
               if (cancelled || !partial) return;
-              queueLive(key, { [stripSuffix(san)]: mkLive(partial) });   // (v0.8.0 렉 수정) 진행 줄마다 그리지 않고 모아서
+              queueLive(key, { [stripSuffix(san)]: { ...mkLive(partial), prov: true } });   // (v0.8.0 렉 수정) 진행 줄마다 그리지 않고 모아서. prov: 낮은 depth의 임시 값(키워드 판단에서 제외)
               // (v0.2.4 버그 수정) 이 후보 수 개별 평가는 여전히 depth 15 고정이다(즉각 반응 유지 목적,
               // 건드리지 않기로 함) — 그 depth를 "?" 도움말의 curDepth에 함께 반영하면, 후보 수가
               // 많아 이 depth-15 검색들이 자주 완료돼 값을 15로 계속 밀어붙이는 바람에, 정작 depth
@@ -1411,8 +1405,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
     if (kwPoolRef.current.key !== key) kwPoolRef.current = { key, by: new Map() };
-    uniq.forEach((m) => { if (moverEval(m, ply) != null) kwPoolRef.current.by.set(stripSuffix(m.san), m); });
-    let t = assignTiers(uniq, ply, board, key, sans, [...kwPoolRef.current.by.values()]).map((m) => {
+    // (v0.8.0, 사용자 요청: 최선·좋은 수에 LOW-LEVEL) 키워드 비교 묶음에는 확정 평가만 — 엔진이 낮은 depth에서 보내는 임시 값(live.prov)은 크게 흔들려
+    //  최선 수도 "최선보다 1.5 이상 나쁨"으로 판정됐다. 라이브 분석 중에는 정적 스냅샷 평가(다른 엔진·depth)도 섞지 않는다. 임시 값으로 덮인 수는 묶음의 마지막 확정 값을 쓴다.
+    const liveKw = liveOn && engine && engine.status === "ready";
+    uniq.forEach((m) => { if (kwSettled(m, liveKw) && moverEval(m, ply) != null) kwPoolRef.current.by.set(stripSuffix(m.san), m); });
+    let t = assignTiers(uniq, ply, board, key, sans, [...kwPoolRef.current.by.values()], { liveOnly: liveKw }).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
       const nm = nameOverride(key, m.san);
       return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), disp: decorateSan(board, m.san, color) };
@@ -1657,6 +1654,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   // 이 수가 실제로 두어진 마스터 대국(대국자/레이팅/결과) — 목록에서 클릭하면 그 대국의 마지막 포지션을 연다.
   const [masterGames, setMasterGames] = useState([]);
   const [masterStats, setMasterStats] = useState(null);   // (v0.6.6) Lichess 마스터 DB 전체 승·무·패 + 많이 둔 다음 수
+  const [masterSample, setMasterSample] = useState(null);   // (v0.8.0) 대국이 많아 대표 대국만 보일 때 { shown, total }
   const [loadingMasterGames, setLoadingMasterGames] = useState(false);
   // (버그 수정) fetch가 실패해도(네트워크 오류 등) masterGames가 그냥 빈 배열([])로 남아, "결과가
   // 없다"는 메시지와 "요청이 실패했다"는 상황을 화면에서 구분할 수 없었다 — 별도 에러 상태를 둬서
@@ -1664,11 +1662,11 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const [masterGamesError, setMasterGamesError] = useState(false);
   const [masterRetry, setMasterRetry] = useState(0);
   useEffect(() => {
-    setMasterGames([]); setMasterStats(null); setLoadingMasterGames(false); setMasterGamesError(false);
+    setMasterGames([]); setMasterStats(null); setMasterSample(null); setLoadingMasterGames(false); setMasterGamesError(false);
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchAllMasterGames([...sans, san]).then((res) => { if (!cancelled) { setMasterGames(res.games); setMasterStats(res.stats); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
+    fetchAllMasterGames([...sans, san]).then((res) => { if (!cancelled) { setMasterGames(res.games); setMasterStats(res.stats); setMasterSample(res.sample ? { shown: res.games.length, total: res.total } : null); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
@@ -1676,7 +1674,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     editKey, devEdit, setDevEdit, nameDraft, setNameDraft,
     openDevEdit, saveMeta, toggleUnbook, isPunishable, curated, stats,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
-    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
+    masterGames, masterStats, masterSample, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
@@ -2376,7 +2374,6 @@ function useExplorerGames(active, path) {
   }, [active, key, retry]);
   return { ...st, retry: () => { explorerCache.delete(key); setRetry((n) => n + 1); } };
 }
-const explorerSpeedLabel = (sp) => (sp === "ultraBullet" ? t("울트라불릿") : sp === "bullet" ? t("불릿") : sp === "blitz" ? t("블리츠") : sp === "rapid" ? t("래피드") : sp === "classical" ? t("클래시컬") : sp === "correspondence" ? t("통신") : sp);
 // (v0.7.9) 전체 통계 대국의 기보 — 서버가 저장한 PGN(처음엔 Lichess에서 받아 검증·저장). 같은 대국은 이 탭 안에서 다시 묻지 않는다.
 const explorerPgnCache = new Map();   // id → Promise<string[]>(SAN 수순)
 function fetchExplorerSans(id) {
@@ -2389,7 +2386,7 @@ function fetchExplorerSans(id) {
   return p;
 }
 // 대국 행 — 마스터 통계 행과 같은 구조(두 선수 줄·왕관·결과, 날짜·시간 규정 줄, 보기·리뷰 버튼, 누르면 기보 펼침). 레이팅만 숨긴다.
-function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onReview }) {
+function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onReview, err }) {
   const [sans, setSans] = useState(null);   // null | "loading" | "error" | string[]
   useEffect(() => {
     if (!expanded || Array.isArray(sans) || sans === "loading") return;
@@ -2397,7 +2394,7 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
     fetchExplorerSans(g.id).then((x) => { if (!off) setSans(x); }, () => { if (!off) setSans("error"); });
     return () => { off = true; };
   }, [expanded]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const meta = [g.month ? g.month.replace("-", ".") : null, g.speed ? explorerSpeedLabel(g.speed) : null].filter(Boolean).join(", ");
+  const meta = g.month ? g.month.replace("-", ".") : "";   // (v0.8.0, 사용자 요청) 유저 통계에는 타임 컨트롤(속도)을 표시하지 않는다
   return (
     <>
       <div onClick={onToggle} role="button" aria-expanded={expanded} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: dim ? 0.5 : 1 }}>
@@ -2416,6 +2413,8 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
           <BestMoveJumpButton onClick={() => onReview()} disabled={!!busy || dim} />
         </div>
       </div>
+      {/* (v0.8.0, 사용자 요청: 유저 통계 버튼이 작동하지 않는 것처럼 보임) 실패 안내를 카드 맨 아래가 아니라 누른 줄 바로 아래에 */}
+      {err && <p role="alert" style={{ fontSize: 11.5, color: T.blunder, margin: "0 0 6px" }}>{err === "review" ? t("리뷰 열기 실패. 잠시 후 다시 시도") : t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
       {expanded && (
         <div style={{ margin: "0 0 6px" }}>
           {sans === "loading" || sans == null ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("기보 불러오는 중…")}</span>
@@ -2426,7 +2425,7 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
     </>
   );
 }
-function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview }) {
+function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview, errFor }) {
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [games]);
   if (!games.length) return null;
@@ -2436,7 +2435,7 @@ function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, 
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{title}</div>
       {games.slice(page * EXPLORER_PAGE, (page + 1) * EXPLORER_PAGE).map((g) => (
         <ExplorerGameRow key={g.id} g={g} ply={ply} expanded={expandedId === g.id} onToggle={() => setExpandedId((v) => (v === g.id ? null : g.id))}
-          busy={busyId === g.id ? busyKind : null} dim={!!busyId && busyId !== g.id} onOpen={(atPly) => onOpen(g, atPly)} onReview={() => onReview(g)} />
+          busy={busyId === g.id ? busyKind : null} dim={!!busyId && busyId !== g.id} onOpen={(atPly) => onOpen(g, atPly)} onReview={() => onReview(g)} err={errFor ? errFor(g.id) : null} />
       ))}
       <ListPager page={page} setPage={setPage} pageCount={pageCount} />
     </div>
@@ -2446,7 +2445,7 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
   const { loading, data, error, retry } = useExplorerGames(true, path);
   const [expandedId, setExpandedId] = useState(null);
   const [busy, setBusy] = useState({ id: null, kind: null });
-  const [openErr, setOpenErr] = useState(null);   // null | "open" | "review"
+  const [openErr, setOpenErr] = useState(null);   // null | { id, kind: "open" | "review" }
   useEffect(() => { setExpandedId(null); setOpenErr(null); }, [path.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
   const games = useMemo(() => (data && data.games ? data.games : []).map((g) => {
     const m = /^(\d{4})-(\d\d)$/.exec(g.month || "");
@@ -2463,11 +2462,11 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
   const run = async (g, kind, fn) => {
     if (busy.id) return;
     setBusy({ id: g.id, kind }); setOpenErr(null);
-    try { await fn(await fetchExplorerSans(g.id)); } catch { setOpenErr(kind); } finally { setBusy({ id: null, kind: null }); }
+    try { await fn(await fetchExplorerSans(g.id)); } catch { setOpenErr({ id: g.id, kind }); } finally { setBusy({ id: null, kind: null }); }
   };
   const open = (g, atPly) => run(g, "open", (sans) => onOpenGame && onOpenGame(sans, atPly));
   const review = (g) => run(g, "review", (sans) => onOpenReview && onOpenReview({ moves: sans, white: { username: g.white.name, rating: null }, black: { username: g.black.name, rating: null } }));
-  const sectionProps = { ply, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review };
+  const sectionProps = { ply, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review, errFor: (id) => (openErr && openErr.id === id ? openErr.kind : null) };
   return (
     <div style={{ marginTop: 12, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
       <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("전체 통계")}</div>
@@ -2480,8 +2479,6 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
             <>
               <ExplorerGameSection title={t("추천 대국")} games={topGames} {...sectionProps} />
               <ExplorerGameSection title={t("최근 대국")} games={recentGames} {...sectionProps} />
-              {openErr === "open" && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
-              {openErr === "review" && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
             </>
           ))}
         </>
@@ -2568,22 +2565,12 @@ function StatsFilterRows({ rows }) {
 const MY_RESULT_WINNER = (g) => (g.result === "win" ? (g.color === "w" ? "white" : "black") : g.result === "loss" ? (g.color === "w" ? "black" : "white") : null);
 const adaptMyGame = (g) => { const d = g.endTime ? new Date(g.endTime * 1000) : null; return { ...g, _orig: g, winner: MY_RESULT_WINNER(g), year: d ? d.getFullYear() : 0, _month: d ? d.getFullYear() * 12 + d.getMonth() : 0 }; };
 const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => Math.floor(k / 12) + "." + String((k % 12) + 1).padStart(2, "0") };   // 2026.07
-// 시간 규정 표기 — "900+10"(chess.com)·"600-10"(OpenChess)을 "15+10"으로. 하루 단위("1/86400")는 "일일". 알 수 없으면 null.
-function fmtTimeControl(raw) {
-  const str = String(raw || "");
-  if (/^1\/\d+$/.test(str)) return t("일일");
-  const m = /^(\d+)[+-](\d+)$/.exec(str) || /^(\d+)$/.exec(str);
-  if (!m) return null;
-  const base = +m[1] / 60;
-  return (Number.isInteger(base) ? base : +base.toFixed(1)) + "+" + (m[2] || 0);
-}
 // 내 대국 한 줄 — 마스터 통계 대국 줄과 같은 모양(백·흑 줄 + 오른쪽 결과, 아래 줄 날짜, 오른쪽 보기·리뷰 버튼). 결과 글자 색만 내 승패 기준이다.
 function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
   const won = g.result === "win", lost = g.result === "loss";
   const dateTxt = g.endTime ? (() => { const d = new Date(g.endTime * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); })() : "";
   const orig = g._orig || g;
-  const fmt = fmtTimeControl(g.timeControl), cls = g.timeClass ? (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : "";
-  const tcTxt = fmt ? fmt + (cls ? " (" + cls + ")" : "") : cls;   // 15+10 (래피드)
+  // (v0.8.0, 사용자 요청) 유저 통계 대국 줄에는 타임 컨트롤(15+10 (래피드) 등)을 표시하지 않는다 — 날짜와 결과만
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6" }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -2594,7 +2581,7 @@ function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
           </div>
           <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
         </div>
-        <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{tcTxt ? ", " + tcTxt : ""}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
+        <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
       </div>
       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
         <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -2613,7 +2600,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, openDevEdit, saveMeta, toggleUnbook, isPunishable, curated,
     stats, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
-    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
+    masterGames, masterStats, masterSample, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
   // (v0.6.6, 사용자 요청) 집중 분석 안에서 지나온 경로 기록 — 가장 멀리 본 수순을 기보로 남기고, 수를 눌러 그 시점으로 이동한다. 새 수를 열면 그 수순으로 이어지고(되돌아간 뒤 다른 수를 열면 그 갈래로 바뀐다), 이전 수순 안의 수로 가면 기록은 그대로다.
@@ -2927,6 +2914,10 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         ]} />}
         {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
             포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
+        {/* (v0.8.0) 1.e4처럼 대국이 아주 많은 수순은 휴대폰에서도 바로 뜨도록 연대별 고레이팅 대표 대국만 받는다(통계 숫자는 전체 기준) */}
+        {masterSample && (
+          <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{t("대국이 많아 연대별 대표 대국 {0}판만 표시. 전체 {1}판", masterSample.shown.toLocaleString(), masterSample.total.toLocaleString())}</div>
+        )}
         {masterGames.length > 1 && (
           <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
             <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
@@ -3149,7 +3140,9 @@ function MoveTileWindow({ enabled, resetKey, children }) {
     <div style={{ position: "relative" }}>
       <BrassScrollStyle />
       <div ref={ref} className="oc-tile-window oc-brass-scroll" onScroll={(e) => { const el = e.currentTarget; setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2); }}
-        style={{ position: "relative", maxHeight: maxH != null ? maxH : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", ...BRASS_SCROLLBAR, marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0 }}>
+        // (v0.8.0, 사용자 요청) 스크롤 상자 안에서 첫 수 블록의 퀘스트 배지(블록 왼쪽 위로 8px 튀어나옴)가 잘려 보이지 않던 문제 — 위·왼쪽에 여백을 두고 그만큼 바깥으로 당긴다
+        style={{ position: "relative", maxHeight: maxH != null ? maxH + 10 : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", ...BRASS_SCROLLBAR, marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0,
+          ...(maxH != null ? { marginTop: -10, paddingTop: 10, marginLeft: -10, paddingLeft: 10 } : null) }}>
         {children}
       </div>
       <MoreBelowHint show={maxH != null && !atEnd} />
@@ -3712,6 +3705,9 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
   // 보드 상단 SequenceBar에 그 대국의 전체 기보가 표시되도록 sans를 그 대국의 전체 수순으로 교체한다.
+  // (v0.8.0, 사용자 요청: 유저 통계 "대국 보기"가 작동하지 않는 것처럼 보임) 집중 분석을 닫고 대국을 연 뒤, 분석 탭을 아래로 내려 둔 상태라도
+  //  보드가 보이게 스크롤한다 — 예전엔 보드가 화면 밖에 있으면 아무 일도 일어나지 않은 것처럼 보였다.
+  const revealBoard = () => { requestAnimationFrame(() => requestAnimationFrame(() => { try { const el = document.querySelector("[data-analysis-board]"); if (el) { const r = el.getBoundingClientRect(); if (r.top < 60 || r.bottom > window.innerHeight) el.scrollIntoView({ behavior: "smooth", block: "start" }); } } catch { } })); };
   const onOpenMasterGame = async (gameId, atPly) => {
     const gameSans = await fetchAnyMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
     if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
@@ -3720,6 +3716,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     // (v0.6.6) atPly(그 대국에서 n번째 수까지)가 오면 거기까지 진행된 상태로 연다 — 이 수 직후 진행 미리보기에서 고른 수.
     const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
+    revealBoard();
   };
   // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 분석 보드는 그대로
   // 두고, 그 대국의 전체 기보를 곧장 /review로 넘긴다. Lichess 마스터 DB의 white/black은 {name,rating}
@@ -3739,6 +3736,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     if (!gameSans || !gameSans.length) return;
     const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
+    revealBoard();
   };
   // (v0.2.0 기능) "게임 리뷰" — 예전엔 대국을 분석 보드에 불러오며 즉석 분석 모드(AnalysisModal)를
   // 자동으로 열었는데, 이제 결과·상대·타임클래스 같은 대국 메타데이터까지 갖춘 전용 /review
@@ -3767,7 +3765,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
   // (v0.7.6) 블록을 거치지 않고 도달했으면(기보 이동 등) 직전 포지션에서 같은 자동 규칙으로 계산한다(평가·채택률을 모르면 그 조건만 건너뜀).
-  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? (curMove.allAdopt !== undefined ? curMove.allAdopt : curMove.adopt) : null }) : []);
+  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), ply: sans.length - 1, adopt: curMove ? (curMove.allAdopt !== undefined ? curMove.allAdopt : curMove.adopt) : null }) : []);
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
@@ -3932,7 +3930,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
               씩)만큼 음수 마진으로 "흘러넘쳐" 카드 테두리까지 꽉 채우고, lg 이상(보드+다음 수 목록이
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
-          <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
+          <div ref={boardRef} data-analysis-board="" className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84, scrollMarginTop: 72 }}>
             <BoardWithMaterial board={board} endFx={drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} startColor={startColor} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
             {promoPrompt && (

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.6.3) 마스터 대국 DB(public/master-games.json)에서 DB에 기록된 최고 엘로가 높은 선수 TOP_N명(엘로가 같으면 대국 수 많은 쪽) → src/data/dbMasters.json
+/** (v0.6.3) 마스터 대국 DB(data/master-games.json)에서 DB에 기록된 최고 엘로가 높은 선수 TOP_N명(엘로가 같으면 대국 수 많은 쪽) → src/data/dbMasters.json
  *  표기가 다른 같은 사람("Carlsen,M" · "Carlsen, Magnus")은 성 + 이름 첫 글자로 합친다. 도감 "마스터" 모식도 서쪽 목록이 알파벳(성) 순으로 나열한다.
  *  항목: [표시 이름("성, 이름" — 가장 긴 표기), 대국 수, 최고 엘로(없으면 null)]. 이미 정렬(성 → 이름)되어 있다.
  *  (v0.6.5) 마스터 상세 프로필이 있는 선수(masterProfiles.json)도 함께 넣는다(엘로 순위 밖의 옛 대가 포함) — build-master-profiles를 먼저 돌릴 것.
@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { peopleIndex, bestName } from "./lib/masterNames.mjs";
 
 const TOP_N = 900;
-const db = JSON.parse(readFileSync(new URL("../public/master-games.json", import.meta.url), "utf8")).games;
+const db = JSON.parse(readFileSync(new URL("../data/master-games.json", import.meta.url), "utf8")).games;
 // (v0.7.5) 표기 정리·성 + 이름 첫 글자로 합치기·복합 성 합치기는 scripts/lib/masterNames.mjs(DB 기반 프로필 보충과 공용)
 const ix = peopleIndex();
 for (const g of db) { const y = String(g.date || "").slice(0, 4); ix.add(g.white, g.whiteElo, y); ix.add(g.black, g.blackElo, y); }   // (v0.7.7 BUG-152) 연도로 동명이인 구분

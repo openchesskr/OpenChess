@@ -2,7 +2,7 @@
 /** (v0.7.5) 저장소 안의 대국 데이터로 마스터 상세 프로필 보충 → src/data/masterProfiles.json에 추가(기존 프로필은 건드리지 않는다).
  *  배경: 상세 프로필은 선수별 PGN 묶음(build-master-profiles.mjs, 원본은 저장소 밖)이 있는 249명뿐이라, 도감 목록(dbMasters.json, 986명)의
  *  딩리런·웨이이·두보프 같은 최상위 선수도 상세 카드가 비어 있었다. 외부 사이트를 긁지 않고, 이미 저장소에 있는 두 데이터로 계산한다.
- *   · public/master-games.json(마스터 대국 DB) · src/data/tournaments/*.json(대회 데이터) — 같은 대국(두 선수·연도·첫 24수)이 겹치면 한 번만 센다
+ *   · data/master-games.json(마스터 대국 DB) · src/data/tournaments/*.json(대회 데이터) — 같은 대국(두 선수·연도·첫 24수)이 겹치면 한 번만 센다
  *  대상: 도감 목록에 있고 아직 프로필이 없으며(masterProfile.js의 findProfile로 확인 — 앱이 찾는 방식 그대로) 합친 대국이 --min판(기본 150) 이상인 선수.
  *  최고 엘로가 높은 선수부터, 프로필 파일이 --budget KB(기본 960, check-tournament-data 상한 1024KB 아래)를 넘지 않을 때까지 넣는다.
  *  계산은 build-master-profiles와 같은 scripts/lib/masterProfileStats.mjs. 이렇게 만든 프로필에는 src: "db"를 붙여 화면이 "수록 대국 기준"임을 밝힌다.
@@ -43,7 +43,7 @@ const ix = peopleIndex();
 const surs = (w, b) => [w, b].map((n) => ascii(split(n)[0]).replace(/ /g, "")).join("/");
 const seenMaster = new Map();   // "성/성@연도:결과" → 마스터 DB 판수
 let nMaster = 0, nTour = 0, dup = 0;
-for (const x of rj("public/master-games.json").games) {
+for (const x of rj("data/master-games.json").games) {
   const res = x.result === "1-0" ? "W" : x.result === "0-1" ? "B" : x.result === "1/2-1/2" ? "D" : "?";
   if (res === "?" || !x.white || !x.black) continue;
   const g = { white: x.white, black: x.black, wElo: x.whiteElo || 0, bElo: x.blackElo || 0, res, y: yearOf(x.date), ev: x.event || "", eco: x.eco || "", moves: String(x.moves || "").split(" ").filter(Boolean) };

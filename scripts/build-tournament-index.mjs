@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** (v0.6.3) 마스터 대국 DB → 도감 대회 색인(src/data/tournamentIndex.json) 생성.
- *  입력: public/master-games.json(대국마다 event·date), src/data/chessTournaments.js, src/data/chessTournamentWinners.js
+ *  입력: data/master-games.json(대국마다 event·date), src/data/chessTournaments.js, src/data/chessTournamentWinners.js
  *  출력(대회 id별):
  *   · games·years·editions(연도별 대국 수·선수 수) — DB에 실제로 있는 만큼만(수록은 일부라 실제 대회보다 적다)
  *   · players: 최다 출전 5명 · top: 대표 대국 8판(최고 레이팅 우선, 기보 포함 — 도감에서 바로 열기)
@@ -14,7 +14,7 @@ import { matchTournament } from "./lib/tournamentEvents.mjs";
 import { TOURNAMENTS } from "../src/data/chessTournaments.js";
 import { WINNERS } from "../src/data/chessTournamentWinners.js";
 
-const db = JSON.parse(readFileSync(new URL("../public/master-games.json", import.meta.url), "utf8")).games;
+const db = JSON.parse(readFileSync(new URL("../data/master-games.json", import.meta.url), "utf8")).games;
 const yearOf = (g) => (g.date && /^\d{4}/.test(g.date) ? parseInt(g.date.slice(0, 4), 10) : null);
 const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]/g, "");
 const sur = (n) => norm(String(n).split(",")[0]);   // DB 이름 "Carlsen,M" → "carlsen"
