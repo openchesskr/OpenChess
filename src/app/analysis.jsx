@@ -9,7 +9,7 @@ import { BRASS_SCROLLBAR, BrassScrollStyle, MoreBelowHint } from "../components/
 import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { LOOP, engineLineGapMs } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
-import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
+import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, legalDests, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { rankMasterMatches } from "../lib/masterNameSearch.js";
@@ -39,6 +39,7 @@ import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 import UgcText from "../components/UgcText.jsx";
 import { useTabMemory } from "../lib/tabMemory.js";
+import { PieceIcon } from "../components/pieceIcons.jsx";   // (v0.8.0) 계산 중 안내 상자의 파셋 기물
 async function lichessFetchText(url) {
   const hit = _lichessCache.get(url);
   if (hit && Date.now() - hit.t < 10 * 60 * 1000) return hit.data;
@@ -797,14 +798,81 @@ function QuestTag({ onClick }) {
 }
 const WDL_PLACEHOLDER = { w: 1, d: 1, b: 1 };
 const wdlOk = (wdl) => !!(wdl && (wdl.w + wdl.d + wdl.b) > 0);   // WinBar가 실제로 그리는 경우(합계 0이면 WinBar는 아무것도 그리지 않는다)
+// (v0.8.0, 사용자 요청) 후보 수 계산 중 안내 — 예전엔 수 블록 위 한 줄("MILKU 수 계산 중")과 빈 목록 상자("제안된 수 없음…")가 따로였다.
+//  하나로 합쳐, 방금 수를 둔 진영의 코치(백 MILKU · 흑 KOKOA)가 작은 체스보드 위에서 후보 칸을 짚어 보며 계산하는 장면을 보여 준다.
+//  · 보드 4×4: 두 진영 기물(파셋 아이콘)이 있고, 금빛 표시가 후보 칸을 차례로 짚으며, 코치 진영의 나이트가 그 칸으로 L자로 뛰어 본다.
+//  · 문구: "MILKU가 수를 계산하는 중입니다" + 차례로 깜빡이는 점 세 개, 아래로 계산 진행 띠.
+//  · compact: 이미 수 블록이 있는 채로 다시 계산할 때(낮은 높이), 아니면 목록 자리를 채우는 큰 상자. 애니메이션은 transform·opacity만, 가벼운 모드에서는 멈춘다.
+const THINK_CSS = `
+@keyframes ocThinkHop{0%,18%{transform:translate(0,0)}30%{transform:translate(var(--hx1),var(--hy1)) scale(1.08)}38%,52%{transform:translate(var(--hx1),var(--hy1))}64%{transform:translate(var(--hx2),var(--hy2)) scale(1.08)}72%,86%{transform:translate(var(--hx2),var(--hy2))}100%{transform:translate(0,0)}}
+@keyframes ocThinkMark{0%,100%{opacity:0;transform:scale(.6)}12%,30%{opacity:1;transform:scale(1)}40%{opacity:0;transform:scale(1.25)}}
+@keyframes ocThinkDot{0%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-2px)}}
+@keyframes ocThinkBob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-3px) rotate(2deg)}}
+@keyframes ocThinkBar{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+.oc-think-hop{animation:ocThinkHop 3.6s cubic-bezier(.4,0,.2,1) infinite}
+.oc-think-mark{animation:ocThinkMark 3.6s ease-in-out infinite}
+.oc-think-dot{display:inline-block;animation:ocThinkDot 1.2s ease-in-out infinite}
+.oc-think-bob{animation:ocThinkBob 2.4s ease-in-out infinite}
+.oc-think-bar{animation:ocThinkBar 1.6s cubic-bezier(.45,0,.35,1) infinite}
+html[data-perf="lite"] .oc-think-hop,html[data-perf="lite"] .oc-think-mark,html[data-perf="lite"] .oc-think-bob,html[data-perf="lite"] .oc-think-bar,html[data-perf="lite"] .oc-think-dot{animation-iteration-count:2}
+`;
+function CoachThinkingBox({ coach = "milku", compact = false }) {
+  const side = coach === "kokoa" ? "b" : "w", other = side === "w" ? "b" : "w";
+  const name = coach === "kokoa" ? "KOKOA" : "MILKU";
+  const cell = compact ? 13 : 22, n = 4, B = cell * n;
+  const sq = (r, c) => ({ left: c * cell, top: r * cell });
+  // 나이트(코치 진영)는 (3,1)에서 시작해 후보 칸 (1,2) → (2,3)을 차례로 짚어 본다(L자 두 번). 금빛 표시가 먼저 그 칸을 짚는다.
+  const start = [3, 1], h1 = [1, 2], h2 = [2, 3];
+  const px = (a, b) => (b[1] - a[1]) * cell + "px", py = (a, b) => (b[0] - a[0]) * cell + "px";
+  const pieces = side === "w"
+    ? [["P", "w", 2, 0], ["P", "b", 1, 1], ["B", "b", 0, 3], ["K", "b", 0, 0]]
+    : [["P", "b", 1, 0], ["P", "w", 2, 1], ["B", "w", 3, 3], ["K", "w", 3, 0]];
+  const ps = Math.round(cell * 0.84);
+  return (
+    <div role="status" aria-live="polite" style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: compact ? 12 : 18, marginBottom: compact ? 10 : 0,
+      padding: compact ? "8px 12px" : "18px 18px", borderRadius: 14, background: T.paper, border: "1px solid #D6C29A", boxShadow: "0 3px 0 #C9B58C, 0 8px 16px -10px rgba(0,0,0,.5)" }}>
+      <style>{THINK_CSS}</style>
+      {/* 코치(보드를 가리지 않게 왼쪽) */}
+      <span aria-hidden="true" className="oc-think-bob" style={{ flexShrink: 0, display: "block", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.3))" }}>
+        <Mascot name={coach} emotion="think" size={compact ? 34 : 58} />
+      </span>
+      {/* 작은 체스보드 + 기물 + 후보 칸 표시 */}
+      <div aria-hidden="true" style={{ position: "relative", flexShrink: 0, width: B + 4, height: B + 4 }}>
+        <div style={{ position: "absolute", left: 0, top: 0, width: B, height: B, borderRadius: 5, overflow: "hidden", border: "2px solid #6E4E2C", boxSizing: "content-box" }}>
+          {Array.from({ length: n * n }, (_, i) => { const r = Math.floor(i / n), c = i % n; return <span key={i} style={{ position: "absolute", ...sq(r, c), width: cell, height: cell, background: (r + c) % 2 ? "#B58863" : "#F0D9B5" }} />; })}
+          {[h1, h2].map((h, i) => (
+            <span key={"m" + i} className="oc-think-mark" style={{ position: "absolute", ...sq(h[0], h[1]), width: cell, height: cell, boxSizing: "border-box", border: Math.max(2, cell * 0.12) + "px solid #E8B93C", borderRadius: 3, background: "rgba(232,185,60,.28)", animationDelay: (i * 1.2) + "s" }} />
+          ))}
+          {pieces.map(([tp, cl, r, c], i) => <span key={"p" + i} style={{ position: "absolute", ...sq(r, c), width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", filter: cl === "w" ? "drop-shadow(0 0 1px rgba(60,40,20,.9))" : undefined }}><PieceIcon type={tp} color={cl} size={ps} /></span>)}
+          <span className="oc-think-hop" style={{ position: "absolute", ...sq(start[0], start[1]), width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", filter: side === "w" ? "drop-shadow(0 0 1px rgba(60,40,20,.9))" : undefined, "--hx1": px(start, h1), "--hy1": py(start, h1), "--hx2": px(start, h2), "--hy2": py(start, h2), willChange: "transform" }}>
+            <PieceIcon type="N" color={side} size={ps} />
+          </span>
+        </div>
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: compact ? 12.5 : 14.5, fontWeight: 800, color: T.ink, lineHeight: 1.35, fontFamily: SITE_FONT }}>
+          {tx("{0}가 수를 계산하는 중입니다", name)}
+          <span aria-hidden="true" style={{ marginLeft: 2, letterSpacing: 1, color: side === "w" ? "#A8842F" : "#5A3E22" }}>{[0, 1, 2].map((i) => <span key={i} className="oc-think-dot" style={{ animationDelay: i * 0.18 + "s" }}>•</span>)}</span>
+        </div>
+        {!compact && <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>
+          <PieceIcon type="K" color={side} size={14} /><span>{side === "w" ? t("백") : t("흑")}</span><span style={{ opacity: .5 }}>·</span><PieceIcon type="P" color={other} size={13} /><span>{t("후보 수와 평가치를 차례로 채웁니다")}</span>
+        </div>}
+        <div aria-hidden="true" style={{ position: "relative", marginTop: compact ? 6 : 10, height: compact ? 4 : 5, borderRadius: 3, background: "rgba(90,58,34,.12)", overflow: "hidden" }}>
+          <span className="oc-think-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "38%", borderRadius: 3, background: side === "w" ? "linear-gradient(90deg,rgba(232,185,60,0),#E8B93C,rgba(232,185,60,0))" : "linear-gradient(90deg,rgba(90,62,34,0),#6E4E2C,rgba(90,62,34,0))", willChange: "transform" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick, onCreatePuzzle }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = blockKeywords(m);   // (v0.7.6) 포지션을 분석해 붙인 자동 키워드 하나(lib/moveKeywords.js)
   const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
-  const gamesDisp = useCountUp(m.games, 900);
-  const posGamesDisp = useCountUp(posGames, 500);
-  const adoptDisp = useCountUp(m.adopt, 900, 2);
+  // (v0.8.0, 사용자 요청: 통계를 빨리) 숫자가 올라가는 연출 0.9초 → 0.35초 — 값이 와도 최종 숫자가 늦게 보이던 것을 줄인다
+  const gamesDisp = useCountUp(m.games, 350);
+  const posGamesDisp = useCountUp(posGames, 300);
+  const adoptDisp = useCountUp(m.adopt, 350, 2);
   return (
     <div style={{ minWidth: 0, borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지.
@@ -867,6 +935,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const color = ply % 2 === 0 ? "w" : "b";
   const [moves, setMoves] = useState([]);
   const [posGames, setPosGames] = useState(node ? node.posGames : null);
+  // (v0.8.0) 이 포지션의 전체 통계 목록이 빠짐없는지(fetchLichess complete) — 그렇다면 목록에 없는 수는 0판으로 바로 채운다(수마다 따로 묻지 않음)
+  const posCompleteRef = useRef({ key: null, complete: false });
   const [statsLoading, setStatsLoading] = useState(false); // (사용자 요청) 리체스 회수/채택률 fetch가 아직 안 끝났음을 알려주는 플래그
   const [posEval, setPosEval] = useState(null);
   const [engineLines, setEngineLines] = useState([]); // (v0.1.3 기능) 엔진 상위 3줄(MultiPV) 전체 수순
@@ -901,6 +971,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     T.timer = setTimeout(() => { T.timer = 0; T.last = performance.now(); const jobs = [...T.jobs.values()]; T.jobs.clear(); jobs.forEach((f) => f()); }, wait);
   }, []);
   useEffect(() => () => clearTimeout(tickRef.current.timer), []);
+  // (v0.8.0, 사용자 요청: 수 블록 평가치를 빨리) 엔진 풀을 첫 수를 두기 전에 미리 띄워 둔다 — 예전엔 첫 후보 수 평가 때 부팅을 시작해 그만큼 늦게 떴다.
+  useEffect(() => { if (liveOn && engine.status === "ready") getLivePool().catch(() => { }); }, [liveOn, engine.status, engine.profile]);   // eslint-disable-line react-hooks/exhaustive-deps
   const liveBatchRef = useRef({ key: null, map: new Map() });
   const queueLive = useCallback((posKey, bySan, now) => {
     const b = liveBatchRef.current;
@@ -1012,6 +1084,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       setMasterEmpty(emptyMaster);
       if (!active || !active.moves.length) { if (emptyMaster) setMoves(withExtra([])); return; }
       setPosGames(active.posTotal);
+      posCompleteRef.current = { key, complete: !active.master && !!active.complete };   // 보충 조회는 전체 DB를 쓰므로 전체 DB 목록일 때만
       const snapBy = Object.fromEntries(base.map((m) => [stripSuffix(m.san), m]));
       // (기능3) 새로 추가한 이론 수(addsFor)와 스냅샷에 원래 있던 이론 수를 구분하지 않는다 —
       // 둘 다 여기서 같은 "책 등록부"로 합쳐서 봄. 그렇지 않으면 dev가 추가한 수가 Lichess의
@@ -1215,6 +1288,59 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // depth보다 훨씬 큰 값(MAX_SEARCH_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
       // 멈추는 건 depth가 아니라 movetime(아래 세 단계의 시간 상한)이므로, 주어진 시간 안에서 depth가
       // 끝까지(더 이상 못 깊어질 때까지) 계속 늘어난다.
+      // (v0.8.0, 사용자 요청: 수 블록 평가치를 훨씬 빨리) 후보 수 평가 — 예전엔 ① 메인 탐색(0.7초)이 끝난 뒤에야 시작했고 ② 수마다 depth 15·최대 0.7초를
+      //  차례로 기다려 아래쪽 블록은 몇 초 뒤에야 숫자가 떴다. 이제 ① 이미 아는 후보 수(Lichess·스냅샷 목록)는 메인 탐색과 동시에 엔진 풀에서 바로 시작하고
+      //  ② 모든 수를 먼저 빠르게(depth 10·최대 120ms, 임시 값 prov) 한 번 훑어 숫자를 띄운 뒤 ③ 기존 정밀 평가(depth 15·최대 700ms)로 확정한다.
+      const mkLive = (ev2) => ev2.mate != null
+        ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
+        : { cp: ev2.cp * childWhite };
+      if (!cache.final) { cache.final = new Set(); cache.quick = new Map(); }
+      const needsEval = (m) => !m.live || !!m.live.prov;   // (v0.8.0) 탐색 도중의 임시 값만 받은 수도 확정 평가를 받아야 한다(BUG-207 후속)
+      const evalMoveList = async (list, workers, epoch) => {
+        if (!list.length || !workers.length) return;
+        const runPass = (quick) => {
+          let next = 0;
+          const run = async (w) => {
+            for (;;) {
+              if (cancelled) return;
+              const i = next++; if (i >= list.length) return;
+              const san = list[i], k = stripSuffix(san);
+              if (cache.final.has(k)) continue;
+              const fen = sansToFen([...sans, san]);
+              if (quick) {
+                // 이미 다른 실행(목록이 바뀌어 다시 돈 effect)이 물어본 수면 그 결과를 기다려 그대로 쓴다 — 건너뛰면 그 실행이 취소될 때 값이 버려져 숫자가 안 떴다
+                let q = cache.quick.get(k);
+                if (!q || q.epoch !== epoch) { q = { epoch, promise: w.evaluate(fen, 10, null, 120) }; cache.quick.set(k, q); }
+                const ev = await q.promise.catch(() => null);
+                if (!cancelled && ev && !cache.final.has(k)) queueLive(key, { [k]: { ...mkLive(ev), prov: true } });
+                continue;
+              }
+              // 정밀 평가 — 낮은 depth 결과부터 바로 반영(임시 값), 최종 depth에서 확정
+              const onMoveProgress = (partial) => { if (cancelled || !partial || cache.final.has(k)) return; queueLive(key, { [k]: { ...mkLive(partial), prov: true } }); };
+              // (버그 수정) 진행 중인 Promise를 수별로(워커 세대 epoch와 함께) 캐시해 재실행 사이 같은 수를 두 번 묻지 않는다. (v0.6.6) null이면 지우고 최대 3번까지 다시 묻는다.
+              let ev = null;
+              for (let attempt = 0; attempt < 3 && !ev && !cancelled; attempt++) {
+                const cached = cache.live.get(san);
+                if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(fen, 15, onMoveProgress, 700) });
+                ev = await cache.live.get(san).promise;
+                if (!ev) cache.live.delete(san);
+              }
+              if (cancelled || !ev || cache.final.has(k)) continue;   // 그 사이 엔진 상위 줄 값으로 확정됐으면 그 값을 유지(블록·엔진 라인 표시 일치)
+              cache.final.add(k);
+              queueLive(key, { [k]: mkLive(ev) });
+            }
+          };
+          return Promise.all(workers.map(run));
+        };
+        await runPass(true);
+        await runPass(false);
+      };
+      // ① 메인 탐색과 동시에 — 이미 아는 후보 수를 엔진 풀에서 바로(풀이 없으면 메인 엔진을 붙잡지 않도록 아래 순서를 따른다)
+      (async () => {
+        const pooled0 = await getLivePool();
+        if (cancelled || !pooled0.length) return;
+        await evalMoveList(moves.filter(needsEval).map((m) => m.san), pooled0, livePoolRef.current.epoch);
+      })().catch(() => { });
       if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, thrP, thrS, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
@@ -1237,6 +1363,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 아직 안 끝난 5초 심화 탐색은 evaluateMulti의 supersede로 자동 중단된다. moves.length 변화로
       // 이 effect가 같은 포지션에서 여러 번 재실행돼도(비이론 수 보충 등) posCacheRef에 시작 여부를
       // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
+      // (v0.8.0) 심화 탐색은 함수로 — 엔진 풀이 없는 기기(휴대폰 + 대형 신경망)에서는 메인 엔진 하나가 후보 수 평가까지 맡으므로,
+      //  5초 심화 탐색이 대기열 앞을 막아 수 블록 평가치가 5초 넘게 늦게 뜨던 문제가 있었다 — 그때는 후보 수 평가를 먼저 끝낸 뒤 시작한다.
+      const startDeep = () => {
       if (cache.extraKey !== key) {
         cache.extraKey = key;
         engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, thrP, thrS, "learn-lines").then((deepPvs) => {
@@ -1271,6 +1400,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           }
         }).catch(() => {});
       }
+      };
+      const pooled = await getLivePool();
+      if (cancelled) return;
+      if (pooled.length) startDeep();
       setLinesPending(false);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
@@ -1285,6 +1418,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         const lineEvBySan = {};
         lines.forEach((l) => { if (l.sans && l.sans.length) lineEvBySan[stripSuffix(l.sans[0])] = l.ev; });
         cur = cur.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; });
+        Object.keys(lineEvBySan).forEach((k) => cache.final.add(k));   // (v0.8.0) 엔진 상위 줄과 겹치는 수는 이 값으로 확정 — 먼저 시작한 개별 평가가 늦게 와도 덮지 않는다
         queueLive(key, lineEvBySan, true);
       }
       const curNonbook = () => cur.filter((m) => !m.book).length;
@@ -1319,62 +1453,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           }
         }
       }
-      // (성능) moves.length가 늘어 이 effect가 재실행되어도, 이전 실행에서 이미 live 평가를 받은
-      // 수는 다시 계산하지 않고 새로 추가된(아직 live가 없는) 수만 평가한다.
-      const list = cur.filter((m) => m.live == null).map((m) => m.san);
-      if (list.length) {
-        const mkLive = (ev2) => ev2.mate != null
-          ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
-          : { cp: ev2.cp * childWhite };
-        // (성능) 후보 수마다 depth 15/movetime 700ms 상한은 그대로(정확도 손실 없음) — 예전엔 이
-        // 목록을 한 번에 하나씩 순서대로 물어봐 후보 수 개수에 정비례해 총 시간이 늘었다. 게임
-        // 리뷰(analyzeGame)와 동일한 work-stealing 패턴으로, 독립된 워커 여러 개가 같은 목록에서
-        // 하나씩 꺼내 동시에 처리하게 해 총 계산량은 그대로 두고 벽시계 시간만 줄인다.
-        const pooled = await getLivePool();
-        if (cancelled) return;
-        const epoch = livePoolRef.current.epoch;
-        const workers = pooled.length ? pooled : [engine];
-        let nextIdx = 0;
-        const runWorker = async (w) => {
-          for (;;) {
-            if (cancelled) return;
-            const i = nextIdx++; if (i >= list.length) return;
-            const san = list[i];
-            // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게
-            // 갱신되며 "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서
-            // 한 번 더 확정. (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로
-            // 승자를 함께 보존한다.
-            const onMoveProgress = (partial) => {
-              if (cancelled || !partial) return;
-              queueLive(key, { [stripSuffix(san)]: { ...mkLive(partial), prov: true } });   // (v0.8.0 렉 수정) 진행 줄마다 그리지 않고 모아서. prov: 낮은 depth의 임시 값(키워드 판단에서 제외)
-              // (v0.2.4 버그 수정) 이 후보 수 개별 평가는 여전히 depth 15 고정이다(즉각 반응 유지 목적,
-              // 건드리지 않기로 함) — 그 depth를 "?" 도움말의 curDepth에 함께 반영하면, 후보 수가
-              // 많아 이 depth-15 검색들이 자주 완료돼 값을 15로 계속 밀어붙이는 바람에, 정작 depth
-              // 20을 목표로 하는 메인 검색(onEvalProgress)의 실제 진행 상황이 15에서 멈춘 것처럼
-              // 가려 보였다. 도움말은 메인 검색 하나만의 진행률을 보여줘야 하므로 여기서는 bumpDepth
-              // 를 부르지 않는다.
-            };
-            // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
-            // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다. 다만 이 캐시가 "지금
-            // 이 워커 세대(epoch)"에 걸린 것인지도 함께 저장한다 — 그 사이 엔진 프로필이 바뀌어
-            // 캐시된 Promise를 만든 워커가 이미 terminate됐다면(다시는 bestmove가 안 옴) 그 낡은
-            // Promise를 계속 기다리는 대신 버리고 지금 풀로 재요청해야, 이 수의 평가가 영영 안
-            // 뜨는 채로 멈추지 않는다.
-            // (v0.6.6 버그 수정) 수 블록의 아이콘·평가치가 가끔 영영 안 뜨던 문제 — 엔진이 시간 초과 등으로 null을 돌려주면 그 null Promise가 캐시에 남아 이후 재실행도
-            // 같은 null을 그대로 받아, 그 수는 평가를 다시 요청하지 못했다. 실패하면 캐시를 지우고 최대 3번까지 다시 요청한다.
-            let ev = null;
-            for (let attempt = 0; attempt < 3 && !ev && !cancelled; attempt++) {
-              const cached = cache.live.get(san);
-              if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
-              ev = await cache.live.get(san).promise;
-              if (!ev) cache.live.delete(san);
-            }
-            if (cancelled || !ev) continue;
-            queueLive(key, { [stripSuffix(san)]: mkLive(ev) });
-          }
-        };
-        await Promise.all(workers.map(runWorker));
-      }
+      // (성능) moves.length가 늘어 이 effect가 재실행되어도 이미 확정 평가를 받은 수는 다시 계산하지 않는다(cache.final). 독립된 워커 여러 개가
+      //  같은 목록에서 하나씩 꺼내 동시에 처리한다(work-stealing). 풀이 없으면 메인 엔진 하나로 하고, 끝난 뒤 심화 탐색을 시작한다.
+      const list = cur.filter(needsEval).map((m) => m.san);
+      await evalMoveList(list, pooled.length ? pooled : [engine], livePoolRef.current.epoch);
+      if (!pooled.length && !cancelled) startDeep();
     })();
     return () => { cancelled = true; };
   }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty, kick]);
@@ -1447,7 +1530,23 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   statPumpRef.current = () => {
     if (!liveOn || !statMountedRef.current) return;
     const myKey = statKeyRef.current;
-    const need = tiled.filter((m) => m.games == null && !statDoneRef.current.has(myKey + "|" + m.san));
+    // (v0.8.0 버그 수정) 포지션이 막 바뀐 직후엔 수 목록(moves)이 아직 이전 포지션의 것이라, 새 수순 뒤에 붙이면 둘 수 없는 수순을 물어봤다(호출 한도만 소모).
+    //  지금 포지션에서 실제로 둘 수 있는 수만 조회한다.
+    const legalHere = (san) => {   // sanSrc는 칸까지 갈 수 있는지만 보므로(자기 기물 칸도 통과) 실제 합법 도착 칸(legalDests)까지 확인한다
+      try {
+        const info = sanSrc(board, san, color); if (!info) return false; if (info.castle) return true;
+        return legalDests(board, info.from[0], info.from[1], color, null).some(([r, c]) => r === info.to[0] && c === info.to[1]) || (info.piece === "P" && info.isCap && !board[info.to[0]][info.to[1]]);   // 앙파상은 그대로 둔다
+      } catch { return false; }
+    };
+    const need = tiled.filter((m) => m.games == null && !statDoneRef.current.has(myKey + "|" + m.san) && legalHere(m.san));
+    // (v0.8.0, 사용자 요청: 수 블록 통계를 빨리) 이 포지션의 전체 통계 목록이 빠짐없으면(posCompleteRef) 목록에 없는 수는 아무도 두지 않은 수 — 0판으로 바로 채운다.
+    //  예전엔 엔진이 보탠 수마다 다음 포지션 통계를 따로 물어(포지션당 최대 9건) 서버 호출 한도(IP당 분당 90회)에 걸려 대기·재시도가 생겼다.
+    if (need.length && posCompleteRef.current.key === myKey && posCompleteRef.current.complete) {
+      const zero = new Set(need.map((m) => m.san));
+      need.forEach((m) => statDoneRef.current.add(myKey + "|" + m.san));
+      setMoves((prev) => prev.map((x) => zero.has(x.san) && x.games == null ? { ...x, games: 0, adopt: 0 } : x));
+      return;
+    }
     while (statInflightRef.current < STAT_CONCURRENCY && need.length) {
       const m = need.shift();
       statDoneRef.current.add(myKey + "|" + m.san);
@@ -1462,7 +1561,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     // 화면에 필요한 통계가 모두 끝났으면, 다음에 눌릴 가능성이 높은 상위 4수의 다음 포지션을 미리 캐시에 채운다.
     if (!need.length && statInflightRef.current === 0 && statPrefetchedRef.current !== myKey && posGames != null) {
       statPrefetchedRef.current = myKey;
-      [...tiled].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4).forEach((m) => { fetchLichess([...sans, m.san], isMaster).catch(() => { }); });
+      // (v0.8.0) 많이 둔 4수 + 엔진이 높게 본 2수(보드에서 직접 두기 쉬운 수)의 다음 포지션 통계를 미리 받는다(호출 한도를 아끼려 지금 기준 하나만)
+      const byGames = [...tiled].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4);
+      const byEval = tiled.filter((m) => m.live && !m.live.prov).sort((a, b) => moverEval(b, ply) - moverEval(a, ply)).slice(0, 2);
+      [...new Set([...byGames, ...byEval].map((m) => m.san))].filter(legalHere).forEach((san) => { fetchLichess([...sans, san], isMaster).catch(() => { }); });
     }
   };
   useEffect(() => { statPumpRef.current(); }, [statOrder, key, liveOn, posGames, statsLoading]);
@@ -3820,18 +3922,12 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
       {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
           보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
           있던 플래그라 그대로 재사용한다. */}
-      {linesPending && (
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-          <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
-          <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{tx("{0} 수 계산 중", ply % 2 === 0 ? "MILKU" : "KOKOA")}</span>
-        </div>
+      {/* (v0.8.0, 사용자 요청) 계산 중 안내 — 방금 둔 수의 진영 코치(백 MILKU · 흑 KOKOA). 첫 위치에서는 MILKU. 수 블록이 아직 없으면 목록 자리를 채우는 큰 상자,
+          이미 있으면 그 위의 낮은 상자. 수를 더 둘 수 없는 포지션(메이트·스테일메이트)에는 띄우지 않는다. */}
+      {(linesPending || moves.length === 0) && legalMoveCount > 0 && (
+        <CoachThinkingBox coach={sans.length === 0 && !fenRoot ? "milku" : color === "w" ? "kokoa" : "milku"} compact={moves.length > 0} />
       )}
-      {moves.length === 0 ? (
-        <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
-          <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>{t("제안된 수 없음. 보드에서 직접 두면 평가 후 블록으로 추가")}</p>
-        </div>
-      ) : (() => {
+      {moves.length === 0 ? null : (() => {
         const bk = moves.filter((m) => m.book);
         const nb = moves.filter((m) => !m.book);
         // (v0.6.6, 사용자 요청) 더보기·접기 없이 표시할 수 있는 수 블록을 항상 전부 보여준다.

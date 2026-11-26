@@ -714,7 +714,11 @@ export async function fetchLichess(sans, master) {
     // 쓸 수 있게 한다(자르는 방식으로 표시하는 것은 아래 useCountUp에서 처리).
     return { san: m.san, games: tot, adopt: posTotal ? (100 * tot / posTotal) : 0, name: m.opening ? m.opening.name : null, wdl: { w: m.white || 0, d: m.draws || 0, b: m.black || 0 } };
   });
-  return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master };
+  // (v0.8.0, 사용자 요청: 수 블록 통계를 빨리) 이 목록이 이 포지션에서 둔 수를 빠짐없이 담았는지 — 기본 상한(12)보다 적게 왔거나 수별 판수 합이 전체 판수와 같으면
+  //  잘린 게 아니다. 그러면 목록에 없는 수는 0판이라, 분석 탭이 수마다 다음 포지션을 따로 물어보지 않아도 된다(요청 수·대기 시간 감소).
+  const sum = moves.reduce((a, m) => a + m.games, 0);
+  const complete = moves.length < 12 || (posTotal > 0 && sum === posTotal);
+  return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master, complete };
 }
 async function fetchWiki(name) {
   if (!name) return null;

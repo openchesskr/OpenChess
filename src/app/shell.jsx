@@ -375,9 +375,15 @@ export function preloadMascotArt() {
   Object.values(MASCOT_ART).forEach((src) => { const im = new Image(); im.decoding = "async"; im.src = src; });
 }
 const josaIGa = (w) => w + (hasBatchim(w) ? "이" : "가");
-export function useOpeningTreeAuto(priorityRef, contentVer) {
+// (v0.8.0, 사용자 요청: 분석 탭 수 블록 통계를 빨리) statsOn — 채택률(Lichess) 조회는 도감 탭을 처음 열었을 때부터 한다. 예전엔 앱이 켜지자마자
+//  이론 수 노드 수천 곳을 8개씩 동시에 물어, 서버 호출 한도(IP당 분당 90회)를 분석 탭과 나눠 쓰며 분석 탭 통계가 429(한도 초과) 대기·재시도에 밀렸다.
+//  트리 구조(이론 수)는 네트워크 없이 바로 만들어지므로 도감 모식도 미리 계산(computeDexLayout)은 그대로다.
+export function useOpeningTreeAuto(priorityRef, contentVer, statsOn = true) {
   const [version, setVersion] = useState(0);
   const mapRef = useRef(new Map());
+  const statsOnRef = useRef(statsOn); statsOnRef.current = statsOn;
+  const kickFetchRef = useRef(() => { });
+  useEffect(() => { if (statsOn) kickFetchRef.current(); }, [statsOn]);
   useEffect(() => {
     let cancelled = false;
     mapRef.current = new Map();
@@ -414,6 +420,7 @@ export function useOpeningTreeAuto(priorityRef, contentVer) {
     // 다음 노드를 골라 O(노드 수²)로 앱 시작을 늦췄다 — 구조 큐는 순서대로(FIFO), 조회 큐만 선택 갈래를 앞당긴다.
     let idleWaiting = false;
     const runFetchQueue = () => {
+      if (!statsOnRef.current) return;   // (v0.8.0) 도감 탭을 열기 전에는 채택률을 묻지 않는다(statsOn이 켜지면 kickFetchRef로 시작)
       // 분석 탭 같은 앞쪽 조회가 진행 중이면 새 백그라운드 조회는 그 조회가 끝난 뒤(+짧은 여유)에 시작한다.
       if (fetchQueue.length && lichessForegroundBusy()) {
         if (!idleWaiting) { idleWaiting = true; whenLichessIdle().then(() => setTimeout(() => { idleWaiting = false; if (!cancelled) runFetchQueue(); }, 250)); }
@@ -429,6 +436,7 @@ export function useOpeningTreeAuto(priorityRef, contentVer) {
       }
     };
     const enqueueFetch = (key, run) => { fetchQueue.push({ key, run }); runFetchQueue(); };
+    kickFetchRef.current = () => { if (!cancelled) runFetchQueue(); };
     const runNext = () => {
       if (cancelled) return;
       while (active < MAX_CONCURRENT && queue.length && started < MAX_NODES) {

@@ -433,7 +433,10 @@ export default function App() {
     return () => document.removeEventListener("click", onDocClick, true);
   }, []);
   const [contentVer, setContentVer] = useState(0);
-  const { data: dexTreeData, version: dexTreeVersion } = useOpeningTreeAuto(dexGenPriorityRef, contentVer);
+  // (v0.8.0) 도감 트리 채택률 조회는 도감 탭을 한 번이라도 연 뒤부터 — 분석 탭 통계와 서버 호출 한도를 다투지 않게(useOpeningTreeAuto statsOn)
+  const [dexVisited, setDexVisited] = useState(false);
+  useEffect(() => { if (tab === "dex" && !dexVisited) setDexVisited(true); }, [tab, dexVisited]);
+  const { data: dexTreeData, version: dexTreeVersion } = useOpeningTreeAuto(dexGenPriorityRef, contentVer, dexVisited);
   // (v0.5.6 성능) 도감 오프닝 트리의 좌표를 앱이 쉬는 틈에 미리 계산해 모듈 캐시에 넣어 둔다 — 도감 탭을 처음 열 때도 계산 없이 곧바로 그린다.
   // 구조가 그대로면 computeDexLayout이 캐시를 그대로 돌려주므로, 채택률 조회로 버전이 자주 올라가도 비용은 구조 확인(수 ms)뿐이다.
   useEffect(() => {

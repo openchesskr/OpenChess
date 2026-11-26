@@ -6782,4 +6782,6 @@ export default {
   "폰을 상대 진영으로 밀어 공간을 확보하는 수": "Pushes a Pawn into enemy territory to gain space",
   "분석 탭에서 고른 퀘스트": "Quest picked in Analysis",
   "대국이 많아 연대별 대표 대국 {0}판만 표시. 전체 {1}판": "Many games: showing {0} representative games by decade. {1} in total",
+  "{0}가 수를 계산하는 중입니다": "{0} is calculating moves",
+  "후보 수와 평가치를 차례로 채웁니다": "Filling in candidate moves and evaluations",
 };
