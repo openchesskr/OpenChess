@@ -51,7 +51,7 @@ ok(/crashed[\s\S]{0,400}setBootNonce\(\(n\) => n \+ 1\)/.test(shell), "부팅 �
 // ④ 렌더링 비용
 ok(/export const FadeIn = React\.forwardRef\(function FadeIn\(\{[^}]*layout = false/.test(common), "FadeIn의 layout 기본값이 켜짐(다시 그릴 때마다 강제 레이아웃)");
 ok(/<motion\.div layout layoutDependency=\{slotIdx\}/.test(rd("src/components/engineLines.jsx")), "엔진 라인 줄이 평가치 갱신마다 위치를 다시 잼(layoutDependency 없음)");
-ok(/<OffscreenPause visible=\{i === idx\}>/.test(rd("src/components/swipePager.jsx")), "모바일 옆 페이지가 보이지 않을 때도 애니메이션이 돎");
+ok(/<OffscreenPause visible=\{i === idx\}[ >]/.test(rd("src/components/swipePager.jsx")), "모바일 옆 페이지가 보이지 않을 때도 애니메이션이 돎");
 ok(/<OffscreenPause style=/.test(rd("src/app/growthHome.jsx")), "분석 탭 아래 성장 분석이 화면 밖에서도 애니메이션이 돎");
 ok(/\.oc-paused[^{]*\{ animation-play-state: paused !important; \}/.test(rd("src/index.css")), "oc-paused CSS 규칙이 없음");
 const gm = rd("src/app/growthMotion.jsx");

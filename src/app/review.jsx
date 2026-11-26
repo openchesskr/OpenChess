@@ -14,6 +14,7 @@ import { SkinContext, PieceGlyph } from "../components/pieces.jsx";
 import { reviewIntroLayout, RI } from "../lib/reviewIntroLayout.js";
 import { playMoveSfx, reviewDepthFor, QUICK_REVIEW_MOVETIME_MS } from "../lib/prefs.js";
 import QuickReviewIntro from "../components/QuickReviewIntro.jsx";
+import { shuffledSquareOrder, IntroSquare, BOARD_INTRO_SQUARE_STAGGER_MS, BOARD_INTRO_PIECE_STAGGER_MS, BOARD_INTRO_ROW_GAP_MS } from "../components/boardIntro.jsx";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
@@ -847,10 +848,10 @@ function ReviewIntroCarousel({ narrow = true, width, height }) {
 const REVIEW_BOARD_INTRO_SUCK_MS = 550;
 // (사용자 재요청) 칸이 깔리는 속도를 더 빠르게 — 간격·팝인 시간을 모두 줄인다(64칸 전체가 예전
 // 약 660ms에서 약 320ms 안팎으로 채워진다).
-const REVIEW_BOARD_INTRO_SQUARE_STAGGER_MS = 4;
-const REVIEW_BOARD_INTRO_SQUARE_POP_MS = 150;
-const REVIEW_BOARD_INTRO_PIECE_STAGGER_MS = 42;
-const REVIEW_BOARD_INTRO_ROW_GAP_MS = 160;
+// (v0.8.0) 칸·기물 박자와 칸 그리기는 공용 부품(components/boardIntro.jsx) — 데크메이트 블록 애니메이션도 같은 것을 쓴다.
+const REVIEW_BOARD_INTRO_SQUARE_STAGGER_MS = BOARD_INTRO_SQUARE_STAGGER_MS;
+const REVIEW_BOARD_INTRO_PIECE_STAGGER_MS = BOARD_INTRO_PIECE_STAGGER_MS;
+const REVIEW_BOARD_INTRO_ROW_GAP_MS = BOARD_INTRO_ROW_GAP_MS;
 const REVIEW_BOARD_INTRO_REPLAY_FAST_MS = 42;
 const REVIEW_BOARD_INTRO_REPLAY_SLOW_MS = 420;
 const REVIEW_BOARD_INTRO_REPLAY_RAMP = 6; // 마지막 이만큼의 수에 걸쳐 느려진다
@@ -880,13 +881,7 @@ function ReviewBoardIntroAnim({ sans, onDone, flip = false }) {
   }, []);
   const cellPx = boardPx / 8;
   // 64칸이 나타나는 무작위 순서 — 마운트 시 한 번만 섞는다. squareOrder[r*8+c] = 그 칸이 몇 번째로 나타나는지.
-  const squareOrder = useMemo(() => {
-    const idx = Array.from({ length: 64 }, (_, i) => i);
-    for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[idx[i], idx[j]] = [idx[j], idx[i]]; }
-    const rank = new Array(64);
-    idx.forEach((sq, order) => { rank[sq] = order; });
-    return rank;
-  }, []);
+  const squareOrder = useMemo(shuffledSquareOrder, []);
   const [stage, setStage] = useState("suck"); // suck → squares → pieces → replay → hold
   const [squaresShown, setSquaresShown] = useState(0); // 0~64
   const [pawnsShown, setPawnsShown] = useState(0);     // 0~8 (백·흑 동시에, 서로 반대 방향으로 채워짐)
@@ -1006,9 +1001,7 @@ function ReviewBoardIntroAnim({ sans, onDone, flip = false }) {
             // 실제로 보이는 배경은 오직 안쪽 motion.div 하나뿐이어야 한다.
             return (
               <div key={sqIdx} style={{ position: "relative", minWidth: 0, minHeight: 0 }}>
-                <motion.div initial={false} animate={{ opacity: shown ? 1 : 0, scale: shown ? 1 : 0.4 }}
-                  transition={{ duration: REVIEW_BOARD_INTRO_SQUARE_POP_MS / 1000, ease: [0.34, 1.4, 0.64, 1] }}
-                  style={{ position: "absolute", inset: 0, ...boardSquareBg(sk, light, r, c) }} />
+                <IntroSquare shown={shown} sk={sk} light={light} r={r} c={c} />
                 {(isFrom || isTo) && <div style={{ position: "absolute", inset: 0, background: isTo ? "rgba(196,154,80,.45)" : "rgba(196,154,80,.28)", pointerEvents: "none" }} />}
                 {showPiece && (
                   // (성능·연출) key를 replayPly까지 포함시키면 이 칸에 그대로 머문 기물까지 매 수마다

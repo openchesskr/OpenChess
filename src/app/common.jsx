@@ -5517,13 +5517,19 @@ function chesscomMobilePlatform() {
   return null;
 }
 const CHESSCOM_APP_FALLBACK_MS = 1500;
+// (v0.8.0, 사용자 요청·BUG-216) 하늘색 글자 링크 — 데스크톱은 chess.com 웹사이트(새 탭), 휴대폰은 위 앱 열기 경로(같은 탭 + 스토어 폴백).
+//  예전엔 color: inherit라 주변 글자와 구분되지 않았고, 데스크톱도 회원가입 경로로 갔으며, 문구가 "chess.com"으로 시작할 때만 링크를 걸어
+//  영어·스페인어 등("Play 5 games on chess.com")에서는 링크가 사라졌다.
+const CHESSCOM_WEB_URL = "https://www.chess.com/";
+export const CHESSCOM_LINK_COLOR = "#2E9BE6";
 function ChesscomTextLink({ children }) {
+  const mobile = isNativeApp() || !!chesscomMobilePlatform();
   const onClick = (e) => {
     e.stopPropagation();
     // (v0.6.4) 앱(웹뷰)에서는 링크 가드가 AppLauncher로 chess.com 앱 링크를 직접 연다(data-prefer-app) — 아래 웹용 스토어 폴백 타이머는 쓰지 않는다.
     if (isNativeApp()) return;
     const platform = chesscomMobilePlatform();
-    if (!platform) return; // 데스크톱은 그냥 평범한 링크로 연다.
+    if (!platform) return; // 데스크톱은 웹사이트를 새 탭으로 연다.
     const timer = setTimeout(() => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") window.location.href = CHESSCOM_APP_STORE[platform];
     }, CHESSCOM_APP_FALLBACK_MS);
@@ -5531,12 +5537,15 @@ function ChesscomTextLink({ children }) {
     document.addEventListener("visibilitychange", cancel);
     window.addEventListener("pagehide", cancel);
   };
-  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} className="hit" style={{ "--hy": "-12px", "--hx": "-6px", color: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}>{children}</a>;
+  return <a href={mobile ? CHESSCOM_GET_APP_URL : CHESSCOM_WEB_URL} {...(mobile ? { "data-prefer-app": "1" } : { target: "_blank", rel: "noopener noreferrer" })} onClick={onClick} className="hit"
+    style={{ "--hy": "-12px", "--hx": "-6px", color: CHESSCOM_LINK_COLOR, fontWeight: 800, textDecoration: "underline", textDecorationColor: "rgba(46,155,230,.45)", textUnderlineOffset: 2 }}>{children}</a>;
 }
+/** 퀘스트 문구 — 문장 안 어디에 있든 "chess.com"에 링크를 건다(언어마다 위치가 다르다). */
 export function questLabelNode(q) {
   const text = questLabel(q);
-  if (!text.startsWith("chess.com")) return text;
-  return <>{<ChesscomTextLink>chess.com</ChesscomTextLink>}{text.slice("chess.com".length)}</>;
+  const at = text.indexOf("chess.com");
+  if (at < 0) return text;
+  return <>{text.slice(0, at)}<ChesscomTextLink>chess.com</ChesscomTextLink>{text.slice(at + "chess.com".length)}</>;
 }
 /* ============================================================ 일일 퍼즐 ============================================================ */
 // (v0.5.0 기능, 사용자 요청 — 기존 v0.2.4 리체스 오프닝 테마 로테이션 방식 폐기) 예전엔 개발자가

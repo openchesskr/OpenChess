@@ -1730,7 +1730,7 @@ export default function App() {
         }
         return;
       }
-      if (path === "/play") { setPlayGame({ sans: [], fenRoot: null }); setTab("store"); urlTabRef.current = "store"; return; }
+      if (path === "/play" || /^\/play\/[a-z]+\/?$/.test(path)) { setPlayGame({ sans: [], fenRoot: null }); setTab("store"); urlTabRef.current = "store"; return; }   // (v0.8.0) /play/<모드>는 PlayPage가 그 화면을 연다
     } finally { setDeepLinkPending(false); } })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loaded가 false→true로 바뀌는 최초 진입 주소만 본다(그 뒤의 pushState/replaceState는 이 앱 자신이 하는 것이라 다시 해석할 필요가 없고, openReview/onOpenPuzzle 등은 매번 최신 클로저를 쓰면 충분해 deps에 넣지 않는다).
   }, [loaded]);
@@ -1956,15 +1956,19 @@ export default function App() {
             /* (v0.2.9 기능) 일일 퀘스트 5개 중 하나를 클리어할 때 — 전체 클리어 팝업(DailyQuestClearedModal)과
                 같은 시각 언어(체크 배지·금속 광택 스윕)를 축소해 쓰되, 확인 없이 자동으로 사라지는 가벼운
                 배너로 둔다(하루에 최대 5번 뜰 수 있어 매번 클릭을 요구하면 번거롭다). */
-            <div className="flex items-center gap-2" style={{ position: "relative", overflow: "hidden", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 14px", borderRadius: 13, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
-              <span className="gm-board-shine" style={{ borderRadius: 13 }} />
-              <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: T.best, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)" }}><Check size={18} color="#fff" strokeWidth={3} /></span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>{t("퀘스트 완료")}</div>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
+            /* (v0.8.0, 사용자 요청) 일일 퀘스트 블록(dailyQuest.jsx DailyQuestCard)과 같은 디자인 — 크림 단색 면·얇은 황동 테두리·아래 3px 받침,
+                "DAILY QUEST" 머리 글자, 세이지 초록 완료 칸(체크), 같은 코인 칩. 그라데이션 없이 단색 면으로만. */
+            <div style={{ position: "relative", overflow: "hidden", borderRadius: 14, border: "1px solid #D6C29A", background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E, 0 14px 30px -12px rgba(0,0,0,.55)", fontFamily: SITE_FONT }}>
+              <div className="flex items-center justify-between" style={{ gap: 8, padding: "6px 12px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid #D6C29A" }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".24em", color: "#A8842F" }}>DAILY QUEST</span>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#3F7A3A" }}>{t("퀘스트 완료")}</span>
               </div>
-              <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-                <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.brassHi }}>+{toast.amount}<CoinIcon size={20} /></span>
+              <div className="flex items-center" style={{ gap: 11, margin: 8, padding: "9px 10px", borderRadius: 11, background: "#E4EFD8", border: "1px solid #A9C589" }}>
+                <span style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#3F7A3A24", border: "1px solid #3F7A3A66", animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationFillMode: "both" }}>
+                  <Check size={18} strokeWidth={2.4} color="#3F7A3A" />
+                </span>
+                <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: "#3F7A3A", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
+                <span className="flex items-center gap-1" style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: "#5E8A52", background: "rgba(90,58,34,.10)", border: "1px solid #D6C29A", borderRadius: 999, padding: "3px 9px 3px 10px" }}>+{toast.amount} <CoinIcon size={14} /></span>
               </div>
             </div>
           ) : null}

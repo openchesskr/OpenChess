@@ -38,7 +38,8 @@ function fmtRemainHMS(ms) {
   return String(Math.floor(s / 3600)).padStart(2, "0") + ":" + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 }
 // fill(v0.7.8): 데스크톱 플레이 탭에서 옆의 일반 대국·데크메이트 블록과 위아래 끝을 맞추려고 칸 높이를 채운다(남는 높이는 퀘스트 줄 사이에 고르게).
-export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight, fill = false }) {
+// compact(v0.8.0): 모바일 넘김 페이지에서 플레이 퀘스트와 합쳐 옆 플레이 페이지 높이에 맞추려고 줄·머리띠를 촘촘하게(내용은 같음).
+export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight, fill = false, compact = false }) {
   const dq = dailyQuest;
   // (v0.8.0 버그 수정) 하이라이트 줄로의 스크롤은 배지를 누를 때(nonce) 한 번만 — 예전엔 ref 콜백(렌더마다 새 함수)에서 scrollIntoView를 불러,
   //  카운트다운 때문에 1초마다 다시 그려질 때마다 그 줄로 다시 끌려가 다른 곳으로 스크롤할 수 없었다.
@@ -84,18 +85,18 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
         // (v0.8.0, 사용자 요청) 분석 탭 퀘스트 배지로 들어왔을 때 — 두 번 튀어 오르고, 금빛 띠가 테두리를 따라 돌며, 위에 "분석 탭에서 고른 퀘스트" 표시
         animate={flash ? { scale: [1, 1.03, 1] } : highlighted ? { scale: [1, 1.035, 1, 1.035, 1] } : { scale: 1 }}
         transition={highlighted && !flash ? { duration: 1.3, delay: 0.45, ease: "easeInOut" } : { duration: 0.45 }}
-        style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12, marginTop: highlighted ? 12 : 0,
+        style={{ position: "relative", display: "flex", alignItems: "center", gap: compact ? 10 : 12, padding: compact ? "7px 10px" : "11px 12px", borderRadius: 12, marginTop: highlighted ? 12 : 0,
           background: done ? "#E4EFD8" : highlighted ? "#FFF8E6" : SURFACE, border: (highlighted ? "2px solid " : "1px solid ") + (highlighted ? BRASS : done ? "#A9C589" : LINE) }}>
         {highlighted && <QuestSpotlight />}
-        <span style={{ position: "relative", width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
-          {done ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Icon size={20} color={tone} strokeWidth={1.75} />}
+        <span style={{ position: "relative", width: compact ? 32 : 40, height: compact ? 32 : 40, borderRadius: compact ? 10 : 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
+          {done ? <Check size={compact ? 17 : 20} strokeWidth={2.4} color={SAGE} /> : <Icon size={compact ? 17 : 20} color={tone} strokeWidth={1.75} />}
           {flash && <Sparkles size={15} color={BRASS} className="dq-spark" style={{ position: "absolute", top: -7, right: -7 }} />}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: done ? "#3F7A3A" : "#3A2516", lineHeight: 1.3 }}>{title}</div>
+          <div style={{ fontSize: compact ? 13 : 13.5, fontWeight: 700, color: done ? "#3F7A3A" : "#3A2516", lineHeight: 1.3 }}>{title}</div>
           {sub && <div style={{ fontSize: 11.5, color: done ? "#5E8A52" : MUTED, marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
           {progress != null && !done && (
-            <div style={{ height: 5, borderRadius: 3, background: INK, marginTop: 8, overflow: "hidden" }}>
+            <div style={{ height: 5, borderRadius: 3, background: INK, marginTop: compact ? 5 : 8, overflow: "hidden" }}>
               <motion.div initial={{ width: 0 }} animate={{ width: Math.round(progress * 100) + "%" }} transition={{ duration: 0.7, ease: [0.22, 0.9, 0.32, 1] }} style={{ height: "100%", background: hue, borderRadius: 3 }} />
             </div>
           )}
@@ -110,7 +111,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
     <div style={{ marginBottom: fill ? 0 : 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E", ...(fill ? { height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" } : null) }}>
       <style>{"@keyframes dqSpark{0%{transform:scale(.3) rotate(0);opacity:0}40%{opacity:1}100%{transform:scale(1.4) rotate(90deg);opacity:0}} .dq-spark{animation:dqSpark .9s ease-out 1} @keyframes dqGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 4px rgba(201,164,92,.32)}} .dq-glow{animation:dqGlow 2.2s ease-in-out infinite} html[data-perf=\"lite\"] .dq-glow{animation:none}"}</style>
       {/* 머리띠 */}
-      <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE, flexWrap: "wrap" }}>
+      <div className="flex items-center justify-between" style={{ gap: 8, padding: compact ? "9px 12px" : "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE, flexWrap: "wrap" }}>
         <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
           <span style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}><ListChecks size={19} color={BRASS} strokeWidth={1.75} /></span>
           <div>
@@ -124,7 +125,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
           <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 600, fontFamily: SITE_FONT, color: MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}><Timer size={12} strokeWidth={1.9} />{fmtRemainHMS(remain)}</span>
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, ...(fill ? { flex: 1, justifyContent: "space-evenly" } : null) }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 8, padding: compact ? 10 : 12, ...(fill && !compact ? { flex: 1, justifyContent: "space-evenly" } : null), ...(compact ? { flex: 1, minHeight: 0, overflowY: "auto" } : null) }}>
         {row({ k: "puzzle", Icon: Puzzle, hue: "#3E7CC4", title: t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), sub: dq.puzzleCount + "/" + dq.puzzleTarget, progress: dq.puzzleTarget ? Math.min(1, dq.puzzleCount / dq.puzzleTarget) : 0 })}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
         {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#C47A1E", title: t("일일 퍼즐 풀기"), sub: t("소셜 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
@@ -169,7 +170,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
 // (v0.7.8, 사용자 요청) "장" 단위 — 우상단 "n장"과 < > 버튼으로 앞뒤 장을 넘겨 보고, 앞 장을 모두 깨야 열리는 장은 자물쇠로 잠가 보여 준다. 처음엔 지금 진행 중인 장을 연다.
 //  fill: 데스크톱 플레이 탭에서 옆의 미니게임 블록과 위아래를 맞추려고 칸 높이를 채운다(퀘스트 줄이 남는 높이를 나눠 가짐).
 import { PLAY_QUEST_CHAPTERS, normalizePlayQuest, questDone, clearedCount, chapterUnlocked, currentChapter } from "../lib/playQuest.js";
-export function PlayQuestCard({ playQuest, loggedIn, fill = false }) {
+export function PlayQuestCard({ playQuest, loggedIn, fill = false, compact = false }) {
   const INK = "rgba(90,58,34,.10)", LINE = "#D6C29A", BRASS = "#A8842F", SAGE = "#3F7A3A", MUTED = "#7A6648";
   const s = playQuest && playQuest.server ? playQuest : normalizePlayQuest(playQuest);
   const claimed = new Set((s.server && s.claimed) || []);
@@ -188,7 +189,7 @@ export function PlayQuestCard({ playQuest, loggedIn, fill = false }) {
   };
   return (
     <div style={{ marginBottom: fill ? 0 : 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E", ...(fill ? { height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" } : null) }}>
-      <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE }}>
+      <div className="flex items-center justify-between" style={{ gap: 8, padding: compact ? "9px 12px" : "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE }}>
         <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
           <span style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}><Swords size={19} color={BRASS} strokeWidth={1.75} /></span>
           <div>
@@ -205,13 +206,13 @@ export function PlayQuestCard({ playQuest, loggedIn, fill = false }) {
           {navBtn(1, view >= total)}
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, ...(fill ? { flex: 1, minHeight: 0, overflowY: "auto" } : null) }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 8, padding: compact ? 10 : 12, ...(fill ? { flex: 1, minHeight: 0, overflowY: "auto" } : null) }}>
         {quests.map((q) => {
           const curN = Math.min(q.target, q.count(s)), ok = !locked && questDone(q, s), tone = locked ? "#9A8A6E" : ok ? SAGE : "#3E7CC4";
           return (
-            <div key={q.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12, background: locked ? "rgba(90,58,34,.06)" : ok ? "#E4EFD8" : "rgba(255,255,255,.55)", border: "1px solid " + (ok ? "#A9C589" : LINE), ...(fill ? { flex: 1 } : null) }}>
-              <span style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
-                {locked ? <Lock size={18} color={tone} /> : ok ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Swords size={20} color={tone} strokeWidth={1.75} />}
+            <div key={q.key} style={{ display: "flex", alignItems: "center", gap: compact ? 10 : 12, padding: compact ? "7px 10px" : "11px 12px", borderRadius: 12, background: locked ? "rgba(90,58,34,.06)" : ok ? "#E4EFD8" : "rgba(255,255,255,.55)", border: "1px solid " + (ok ? "#A9C589" : LINE), ...(fill ? { flex: 1 } : null) }}>
+              <span style={{ width: compact ? 32 : 40, height: compact ? 32 : 40, borderRadius: compact ? 10 : 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
+                {locked ? <Lock size={compact ? 15 : 18} color={tone} /> : ok ? <Check size={compact ? 17 : 20} strokeWidth={2.4} color={SAGE} /> : <Swords size={compact ? 17 : 20} color={tone} strokeWidth={1.75} />}
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700, color: locked ? MUTED : ok ? "#3F7A3A" : "#3A2516", lineHeight: 1.3 }}>{q.title()}</div>
@@ -229,7 +230,7 @@ export function PlayQuestCard({ playQuest, loggedIn, fill = false }) {
           );
         })}
       </div>
-      <p style={{ margin: 0, padding: "0 14px 12px", fontSize: 11, lineHeight: 1.5, color: MUTED }}>{t("장의 퀘스트를 모두 클리어하면 더 어려운 다음 장이 열림. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨")}{!loggedIn ? " · " + t("보상은 로그인 후 지급") : ""}</p>
+      <p style={{ margin: 0, padding: compact ? "6px 12px 9px" : "0 14px 12px", fontSize: compact ? 10.5 : 11, borderTop: compact ? "1px solid " + LINE : undefined, lineHeight: 1.5, color: MUTED }}>{t("장의 퀘스트를 모두 클리어하면 더 어려운 다음 장이 열림. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨")}{!loggedIn ? " · " + t("보상은 로그인 후 지급") : ""}</p>
     </div>
   );
 }

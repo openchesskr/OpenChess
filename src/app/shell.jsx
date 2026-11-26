@@ -1202,7 +1202,10 @@ export const TABS = [{ key: "analysis", label: t("분석"), Icon: null }, { key:
 // 예전엔 분석이 "learn", 학습이 "quest"라는 키를 써서 경로(/analysis·/learn)와 코드가 엇갈렸다.
 export const TAB_PATH = { analysis: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/social", learn: "/learn", store: "/play", set: "/setting" };
 const PATH_TAB = { "/analysis": "analysis", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/social": "puzzle", "/puzzle": "puzzle", "/learn": "learn", "/play": "store", "/setting": "set" };
-export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
+export function tabFromPath(pathname) {
+  if (/^\/play\/[a-z]+\/?$/.test(pathname || "")) return "store";   // (v0.8.0) 플레이 탭 모드 화면 하위 주소(/play/standard 등 — play.jsx PLAY_SUB_OF)
+  return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null;
+}
 // (v0.7.5, 사용자 요청 — 새로고침 UX) 첫 화면부터 맞는 탭을 그린다. 예전엔 탭 주소가 아닌 곳(/, /puzzle/번호-라인, /review…, /user/…)이면
 //  일단 분석 탭을 그렸다가, 저장된 상태·서버 응답이 온 뒤(몇 초 뒤)에 원래 탭으로 바꿔 "다른 탭이 잠깐 보였다 돌아오는" 깜빡임이 생겼다.
 //  ① 탭 주소면 그 탭 ② 퍼즐 딥링크면 퍼즐 탭 ③ 그 밖에는 마지막으로 보던 탭(LAST_TAB_KEY, 탭이 바뀔 때마다 동기 저장) ④ 처음이면 분석 탭.

@@ -60,7 +60,7 @@ ok(/playQuestStatus\(\)/.test(app) && /economyClaimPlayQuest\(key\)/.test(app) &
 { const dq = rd("src/app/dailyQuest.jsx");
   const i1 = play.indexOf("<PlayNormalButton "), i2 = play.indexOf("<DeckmateButton fill={gridMode} />"), i3 = play.indexOf("<PlaySpecialGames ");
   ok(i1 > 0 && i2 > i1 && i3 > i2, "데크메이트 블록이 일반 대국과 미니게임 사이에 없음");
-  ok(/t\("출시 예정"\)/.test(play) && /background: "rgba\(24,14,7,\.58\)"/.test(play), "데크메이트에 어두운 반투명 막·출시 예정 표시가 없음");
+  ok(/t\("출시 예정"\)/.test(play) && /background: "linear-gradient\(90deg, rgba\(24,14,7,\.3\)[^"]*rgba\(24,14,7,\.58\)/.test(play), "데크메이트에 어두운 반투명 막(v0.8.0: 애니메이션 쪽은 옅게)·출시 예정 표시가 없음");
   ok(/gridTemplateAreas: '"hub dq" "mg pq"'/.test(play) && /alignItems: "stretch"/.test(play), "데스크톱 2×2 격자(일반 대국+데크메이트↔일일 퀘스트, 미니게임↔플레이 퀘스트)가 없음");
   ok(/position: "absolute", inset: 0 \}\}><PlayQuestCard [^>]*fill \/>/.test(play) && /<DailyQuestCard [^>]*fill \/>/.test(play), "플레이 퀘스트는 미니게임 블록 높이에, 일일 퀘스트는 1줄 높이에 맞춰야 함(fill)");
   ok(!/보상 받음/.test(dq) && /t\("완료"\)/.test(dq), "퀘스트 클리어 문구는 \"완료\"");
