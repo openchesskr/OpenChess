@@ -1224,7 +1224,7 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
       {/* (v0.5.7) px 모드에선 이 줄 자리를 늘 비워 둔다 — 문구가 떴다 사라질 때마다 아래 요소가 들썩이지 않게(높이는 reviewIntroLayout이 셈한 값). */}
       {(calculatingSan || pxMode) && (
         <div style={{ marginTop: 3, height: pxMode ? 14 : undefined, lineHeight: pxMode ? "14px" : undefined, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: SITE_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {calculatingSan ? t("{0}분석 중…", (calculatingSan)) : ""}
+          {calculatingSan ? t("{0} 분석 중…", (calculatingSan))   /* (v0.8.0, 사용자 요청) 수와 "분석 중" 사이 띄어쓰기 */ : ""}
         </div>
       )}
     </div>

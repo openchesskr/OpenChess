@@ -830,7 +830,7 @@ export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setPr
             {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
           </span>
         </div>
-        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 19 Lite)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
+        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 18 Lite, v0.8.0)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
             고정된 동안 아래 엔진·속도 선택은 잠기지만, 원래 고른 값은 그대로 저장돼 있어 끄면 돌아온다. */}
         <div className="flex items-center justify-between" style={{ gap: 10, padding: "10px 12px", marginBottom: 14, borderRadius: 10, border: "1.5px solid " + (quickReview ? T.brass : "#DCCBA8"), background: quickReview ? "rgba(196,154,80,.14)" : "#fff" }}>
           <div style={{ minWidth: 0 }}>

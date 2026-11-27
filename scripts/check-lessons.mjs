@@ -128,13 +128,21 @@ for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
     for (const k of Object.keys(seed)) if (!ids.has(k)) fails.push("서버 seedChapters에 커리큘럼에 없는 레슨 " + k);
   }
 }
-// (v0.7.9, 사용자 요청) 레슨의 체스 용어는 원문 발음 그대로 — 예전 의역 용어가 다시 들어오면 실패(질식 메이트 → 스모더드 메이트 등)
+// (v0.8.0, 사용자 요청 — v0.7.9 방침을 뒤집음) 레슨의 체스 개념 용어는 한국어에서 고유어·한자어로 — 영어 발음 표기가 다시 들어오면 실패
+//  (캔디데이트 무브 → 후보 수, 익스체인지 새크리파이스 → 교환 희생 등). 기물 이름(킹·퀸·룩·비숍·나이트·폰), 규칙 이름(체크·체크메이트·캐슬링·
+//  프로모션·앙파상·스테일메이트), 대국 단계(오프닝·미들게임·엔드게임), 포지션, 사람·오프닝 이름(필리도르·루세나·아나스타샤·시칠리안 등)은 그대로 둔다.
 {
-  const { readFileSync: rf } = await import("node:fs");
-  const lessonSrc = ["src/lib/lessons/curriculum.js", "src/lib/lessons/curriculumMore.js", "src/lib/lessonPuzzles.js"].map((f) => rf(new URL("../" + f, import.meta.url), "utf8")).join("\n");
+  const { readFileSync: rf, readdirSync: rd } = await import("node:fs");
+  const files = [...rd(new URL("../src/lib/lessons/", import.meta.url)).filter((f) => f.endsWith(".js")).map((f) => "src/lib/lessons/" + f), "src/lib/lessonPuzzles.js"];
+  const lessonSrc = files.map((f) => rf(new URL("../" + f, import.meta.url), "utf8")).join("\n");
   const strs = [...lessonSrc.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).filter((x) => /[가-힣]/.test(x));
-  const OLD = ["질식 메이트", "스머더드", "승격", "이중 공격", "빗나가게 하기", "과부하", "중간수", "수비수 제거", "복도 메이트", "보든 메이트", "아나스타시아", "그리스 선물", "교환 희생", "퀸 희생", "희생", "폰 돌파", "겹친 폰", "고립된 폰", "통과한 폰", "열린 파일", "예방 수", "공간 우위", "후보 수", "핵심 칸", "폰의 정사각형", "영구 체크", "사다리", "학자 메이트", "바보 메이트", "좋은 비숍", "나쁜 비숍", "킹 차단", "유인"];
-  for (const w of OLD) { const hit = strs.find((x) => x.includes(w)); if (hit) fails.push("레슨 용어는 원문 발음으로(예전 표기 \"" + w + "\"): " + hit.slice(0, 50)); }
+  const OLD = ["캔디데이트", "새크리파이스", "익스체인지", "디스커버드", "아이솔레이티드", "패스드 폰", "더블 폰", "더블폰", "더블 체크", "더블 어택", "퍼페추얼", "포크", "스큐어", "오퍼지션", "템포",
+    "오픈 파일", "스퀘어", "프로필락시스", "디플렉션", "디코이", "오버로딩", "인터메조", "엑스레이", "아웃포스트", "브레이크스루", "어드밴티지", "트랩드", "추크츠방", "언더프로모션",
+    "스모더드", "풀스 메이트", "스칼라스", "백랭크", "코리도", "리무빙", "디펜더", "인터피어런스", "어트랙션", "클리어런스", "콰이어트", "컷오프", "익스포즈드", "이퀄리티", "어드밴스드",
+    "배드 비숍", "굿 비숍", "그릭 기프트", "마이너 피스", "래더", "크러싱", "레이스"];
+  const PIN = /(^|[^가-힣])핀([^가-힣]|$|[은을이의과도만에으])/;
+  for (const w of OLD) { const hit = strs.find((x) => x.includes(w)); if (hit) fails.push("레슨 용어는 고유어·한자어로(영어 발음 표기 \"" + w + "\"): " + hit.slice(0, 50)); }
+  { const hit = strs.find((x) => PIN.test(x)); if (hit) fails.push("레슨 용어는 고유어·한자어로(영어 발음 표기 \"핀\" → 고정): " + hit.slice(0, 50)); }
 }
 
 // (v0.7.9, 사용자 요청) 가르친 뒤 묻기 — 객관식 질문은 ① 바로 앞 스텝이 설명(read, 대화 포함)이거나 ② 정답의 낱말 절반 이상이 이미 그 레슨에서
