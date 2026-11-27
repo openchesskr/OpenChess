@@ -115,7 +115,7 @@
 - 링크 미리보기(og/twitter 메타·대표 이미지), 탭별 문서 제목.
 
 **버그 수정**
-- BUG-192(로그아웃 상태 데스크톱 검색·프로필 창), BUG-200(일일 퍼즐 카드 없음/실패 상태), BUG-202(접근성 NavBtn label·공용 ToggleSwitch), BUG-203(데크메이트 배지 위치), BUG-204(번역·검색 안내), BUG-205(스와이프 안내 자동 접힘), BUG-206~215(위), BUG-216(일일 퀘스트 chess.com 링크 — 문장 어디든·하늘색·데스크톱 웹/휴대폰 앱), BUG-217(봇 설명 줄바꿈), BUG-218(리뷰 "1.e4 분석 중" 띄어쓰기), BUG-219(레슨 "래더 메이트 메이트").
+- BUG-192(로그아웃 상태 데스크톱 검색·프로필 창), BUG-200(일일 퍼즐 카드 없음/실패 상태), BUG-202(접근성 NavBtn label·공용 ToggleSwitch), BUG-203(데크메이트 배지 위치), BUG-204(번역·검색 안내), BUG-205(스와이프 안내 자동 접힘), BUG-206~215(위), BUG-216(일일 퀘스트 chess.com 링크 — 문장 어디든·하늘색·데스크톱 웹/휴대폰 앱), BUG-217(봇 설명 줄바꿈), BUG-218(리뷰 "1.e4 분석 중" 띄어쓰기), BUG-219(레슨 "래더 메이트 메이트"), BUG-220(배포 전, 휴대폰 모드 소개 박스에서 긴 모드 이름 잘림).
 
 **시스템**
 - prebuild 검사 추가·갱신: `check-render-perf`, `check-master-shards`, `check-public-image-size`, `check-a11y-controls`, `check-dock-windows`, `check-facet-icons` ZONES(modeHero·botTierButton·deckmateAnim·streakAttend·postBackdrops), `check-social-feed`, `check-play-quest`, `check-lessons`, `check-review-speed`.
