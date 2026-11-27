@@ -68,11 +68,11 @@ export function lessonTheme(lesson) {
 
 /* ── 테마 이름(화면) ── */
 const ANGLE_LABEL = {
-  fork: () => t("양걸이"), pin: () => t("고정"), skewer: () => t("꿰뚫기"), discoveredAttack: () => t("발견 공격"), doubleCheck: () => t("이중 체크"), hangingPiece: () => t("행잉 피스"),
-  trappedPiece: () => t("갇힌 기물"), capturingDefender: () => t("수비수 제거"), deflection: () => t("끌어내기"), attraction: () => t("유인"), clearance: () => t("길 비우기"), interference: () => t("차단"),
-  intermezzo: () => t("중간수"), xRayAttack: () => t("투시"), sacrifice: () => t("희생"), quietMove: () => t("조용한 수"), defensiveMove: () => t("디펜시브 무브"), zugzwang: () => t("수 강제"),
+  fork: () => t("포크"), pin: () => t("핀"), skewer: () => t("스큐어"), discoveredAttack: () => t("디스커버드 공격"), doubleCheck: () => t("이중 체크"), hangingPiece: () => t("행잉 피스"),
+  trappedPiece: () => t("갇힌 기물"), capturingDefender: () => t("수비수 제거"), deflection: () => t("디플렉션"), attraction: () => t("유인"), clearance: () => t("길 비우기"), interference: () => t("차단"),
+  intermezzo: () => t("사잇수"), xRayAttack: () => t("투시"), sacrifice: () => t("희생"), quietMove: () => t("조용한 수"), defensiveMove: () => t("디펜시브 무브"), zugzwang: () => t("수 강제"),
   exposedKing: () => t("노출된 킹"), kingsideAttack: () => t("킹사이드 공격"), attackingF2F7: () => t("f2·f7 공격"), advancedPawn: () => t("전진한 폰"), promotion: () => t("프로모션"),
-  underPromotion: () => t("하위 프로모션"), enPassant: () => t("앙파상"), castling: () => t("캐슬링"), backRankMate: () => t("뒷줄 메이트"), smotheredMate: () => t("질식 메이트"),
+  underPromotion: () => t("하위 프로모션"), enPassant: () => t("앙파상"), castling: () => t("캐슬링"), backRankMate: () => t("백랭크 메이트"), smotheredMate: () => t("스모더드 메이트"),
   arabianMate: () => t("아라비안 메이트"), bodenMate: () => t("보덴 메이트"), anastasiaMate: () => t("아나스타샤 메이트"), hookMate: () => t("훅 메이트"), doubleBishopMate: () => t("더블 비숍 메이트"),
   dovetailMate: () => t("도브테일 메이트"), mateIn1: () => t("1수 메이트"), mateIn2: () => t("2수 메이트"), mateIn3: () => t("3수 메이트"), mate: () => t("체크메이트"),
   endgame: () => t("엔드게임"), pawnEndgame: () => t("폰 엔드게임"), rookEndgame: () => t("룩 엔드게임"), queenEndgame: () => t("퀸 엔드게임"), bishopEndgame: () => t("비숍 엔드게임"),

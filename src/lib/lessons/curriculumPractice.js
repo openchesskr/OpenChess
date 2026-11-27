@@ -16,6 +16,6 @@ export const PRACTICE = {
   ],
   st_doubled: () => [
     M("r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 3 3", t("비숍으로 c6의 나이트를 잡으세요."), { uci: ["b5c6"] }, "b5c6"),
-    M("r1bqk1nr/pppp1ppp/2n5/4p3/1b2P3/2N2N2/PPPP1PPP/R1BQKB1R b KQkq - 5 4", t("비숍으로 c3의 나이트를 잡아 백에게 겹친 폰을 만드세요."), { uci: ["b4c3"] }, "b4c3"),
+    M("r1bqk1nr/pppp1ppp/2n5/4p3/1b2P3/2N2N2/PPPP1PPP/R1BQKB1R b KQkq - 5 4", t("비숍으로 c3의 나이트를 잡아 백에게 더블폰을 만드세요."), { uci: ["b4c3"] }, "b4c3"),
   ],
 };
