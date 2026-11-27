@@ -6,6 +6,7 @@ import { ownPriorMoveWasSacrifice, materialDiff, posEvalToWhite, isSacrifice, fm
 import { useRef, useMemo, useState, useEffect, useContext, useLayoutEffect } from "react";
 import { DRAG_SCROLL_MULT, T, BOARD_SKINS, BOARD_GLOSS, boardSquareBg } from "../lib/theme.js";
 import { SEQ_FONT, SITE_FONT, EvalBar } from "../components/engineLines.jsx";
+import { StreakAttendAnim } from "../components/streakAttend.jsx";   // (v0.8.0) 연속 출석 애니메이션
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
 import { SB_ON, sbSelect, sbRpc, sbInsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph, TierLogoDisc } from "../components/pieces.jsx";
@@ -22,8 +23,7 @@ import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
 import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, moveFxKindOn, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
-import { AccountChessStats } from "./profile.jsx";
-import { PostComposer, NewPostButton, StreakCount } from "./postComposer.jsx";
+import { PostComposer, NewPostButton, StreakCount, PostGamePicker } from "./postComposer.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -567,15 +567,17 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
         </div>
         <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(255,246,226,.62)", marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
-      {/* (사용자 요청) 퍼즐 레이팅을 티어를 표시하는 도형(TierLogoDisc) 우측에 표시 — 누르면 "퍼즐
-          레이팅 : n" 말풍선이 뜬다(모바일 안전 영역 클램프는 ClickInfoBadge가 담당). */}
-      {puzzleRating != null && (
-        <ClickInfoBadge text={t("퍼즐 레이팅 : {0}", fmtFull(puzzleRating))}>
-          <span title={t("퍼즐 레이팅: 라인을 풀면 상승, 틀린 수를 두면 하락")} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-            <MaterialIcon name="extension" size={11} /> {fmtFull(puzzleRating)}
+      {/* (사용자 요청) 퍼즐 레이팅을 티어 도형 우측에 표시. (v0.8.0, 사용자 요청) 티어 박스와 같은 색(티어 팔레트 테두리·티어 그러데이션 글자)으로
+          통일하고, 눌러도 말풍선이 뜨지 않는다(누르면 박스 전체처럼 티어 여정이 열린다). */}
+      {puzzleRating != null && (() => {
+        const th = tierTheme(tier.key);
+        return (
+          <span aria-label={t("퍼즐 레이팅 {0}", fmtFull(puzzleRating))} style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 10, padding: "4px 10px", borderRadius: 999, background: "rgba(0,0,0,.32)", border: "1px solid " + th.hi, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.06)", flexShrink: 0 }}>
+            <span style={{ display: "inline-flex", color: th.hi }}><MaterialIcon name="extension" size={11} /></span>
+            <span style={{ fontSize: 12, fontWeight: 900, fontFamily: SITE_FONT, background: th.grad, WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent" }}>{fmtFull(puzzleRating)}</span>
           </span>
-        </ClickInfoBadge>
-      )}
+        );
+      })()}
     </div>
     </TierOctFrame>
   );
@@ -2610,7 +2612,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // (사용자 요청) 1단계 PGN/FEN 입력에 chess.com 대국도 선택할 수 있게 — 유산(LegacyManageModal)의
   // "chess.com 대국에서 선택" 패턴을 응용하되, 토글 버튼 없이 연동돼 있으면 항상 입력 박스 아래에
   // chess.com 통계·최근 대국 목록을 펼쳐 둔다.
-  const chesscomReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
+  // (v0.8.0) 대국 목록은 PostGamePicker가 플랫폼(OpenChess·chess.com)별로 그린다 — chess.com 연동 여부도 거기서 본다.
   const [pcParsed, setPcParsed] = useState(null); // { kind:"fen", fenRoot, raw } | { kind:"pgn", sans, raw }
   const [pcErr, setPcErr] = useState("");
   const [pcTheme, setPcTheme] = useState(null); // "checkmate" | "sacrifice" | "advantage" | "punish"
@@ -3261,18 +3263,15 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
             {/* (사용자 요청) "chess.com 대국에서 선택" 토글 버튼을 없애고, 연동돼 있으면 입력 박스 아래에
                 chess.com 통계·최근 대국 목록을 기본으로 펼쳐 둔다 — 유산 만들기처럼 그 자리에서 바로
                 고를 수 있다. */}
-            {chesscomReady && (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                <AccountChessStats chesscom={chesscom} username={chesscomUsername} selectedGameId={pcSelectedGameId} onSelectGame={(g, gid) => {
-                  if (pcSelectedGameId != null && gid === pcSelectedGameId) {
-                    setPcSelectedGameId(null); setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
-                    return;
-                  }
-                  setPcSelectedGameId(gid);
-                  setPcInput(sansToPgnText(g.moves, "w")); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
-                }} />
-              </div>
-            )}
+            {/* (v0.8.0, 사용자 요청) 대국 목록 — OpenChess / chess.com 플랫폼 토글(postComposer.jsx PostGamePicker, 유산·대국 작성기와 같은 부품) */}
+            <PostGamePicker chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername} selectedId={pcSelectedGameId} onSelect={(g, gid) => {
+              if (!g) {
+                setPcSelectedGameId(null); setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
+                return;
+              }
+              setPcSelectedGameId(gid);
+              setPcInput(sansToPgnText(g.moves, "w")); setPcParsed(null); setPcErr(""); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr("");
+            }} />
           </div>
           {/* 2단계 — 퍼즐 유형 선택(PGN 한 수가 여러 전술을 동시에 만족할 수 있어 직접 고른다). 유형
               버튼을 먼저 누르게 하지 않고, PGN이 확인되는 즉시 세 유형의 후보를 모두 미리 불러와
@@ -3554,14 +3553,15 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   );
   const headerNode = (
       <>
-        {/* (v0.7.8, 사용자 요청) 1줄: 왼쪽 연속 출석 · 오른쪽 새 게시물 / 2줄: 검색창 + 필터 */}
+        {/* (v0.7.8, 사용자 요청) 왼쪽 연속 출석 · 오른쪽 새 게시물. (v0.8.0) 검색창·필터는 일일 퍼즐 캐러셀 아래(searchRowNode)로 내렸다 */}
         <div className="flex items-center justify-between" style={{ marginBottom: 8, paddingLeft: 2, gap: 10 }}>
           <StreakCount count={dailyPuzzleStreak ? dailyPuzzleStreak.count : 0} />
           <NewPostButton onClick={() => openComposer(composeType)} disabled={!myUid} />
         </div>
-        <div style={{ display: "flex", marginBottom: 10 }}>{searchBarNode}</div>
       </>
   );
+  // (v0.8.0, 사용자 요청) 검색창·필터 버튼 — 일일 퍼즐 캐러셀 바로 아래, 피드 위
+  const searchRowNode = <div style={{ display: "flex", margin: "4px 0 10px" }}>{searchBarNode}</div>;
   // (v0.7.8, 사용자 요청) 오른쪽 영역 — 퍼즐 티어 박스 + 퍼즐 XP·퍼즐 레이팅 리더보드 + 친구 퍼즐 현황(app/puzzleSide.jsx)
   const sideNode = (
     <>
@@ -3571,7 +3571,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     </>
   );
   const composerNode = puzzleMode === "create" && myUid ? (
-      <PostComposer type={composeType} setType={setComposeType} onClose={() => setPuzzleMode("solve")} engine={engine} onPublish={onPublishPost || (() => ({ ok: false, reason: "invalid" }))} chesscom={chesscom} chesscomUsername={chesscomUsername}>
+      <PostComposer type={composeType} setType={setComposeType} onClose={() => setPuzzleMode("solve")} engine={engine} onPublish={onPublishPost || (() => ({ ok: false, reason: "invalid" }))} chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername}>
         {createNode}
       </PostComposer>
   ) : null;
@@ -3586,14 +3586,16 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       <div className="social-tab" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 0, alignItems: "start", width: "calc(100vw - 32px)", maxWidth: "calc(100vw - 32px)", marginLeft: "calc(50% - 50vw + 16px)" }}>
         <div className="social-left" style={{ minWidth: 0, paddingRight: 18 }}>
           {headerNode}
-          {searchNode}
           {storiesNode}
+          {searchRowNode}
+          {searchNode}
           {feedNode}
         </div>
         <aside style={{ position: "sticky", top: 12, minWidth: 0, maxHeight: "calc(100dvh - 120px)", overflowY: "auto", paddingLeft: 18, paddingRight: 2, maxWidth: 420 }}>
           {sideNode}
         </aside>
         {composerNode}
+        <StreakAttendAnim streak={dailyPuzzleStreak} />
       </div>
     );
   }
@@ -3601,10 +3603,12 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   return (
     <div className="social-tab" style={{ maxWidth: 600, margin: "0 auto" }}>
       <SwipePager pages={[
-        { key: "feed", node: <div style={{ minWidth: 0 }}>{headerNode}{searchNode}{storiesNode}{feedNode}</div> },
+        { key: "feed", node: <div style={{ minWidth: 0 }}>{headerNode}{storiesNode}{searchRowNode}{searchNode}{feedNode}</div> },
         { key: "side", node: <div style={{ minWidth: 0 }}>{sideNode}</div> },
       ]} />
       {composerNode}
+      {/* (v0.8.0, 사용자 요청) 하루 한 번 첫 진입 때 연속 출석 애니메이션 */}
+      <StreakAttendAnim streak={dailyPuzzleStreak} />
     </div>
   );
 }

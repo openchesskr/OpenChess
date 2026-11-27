@@ -16,14 +16,15 @@ const ZONES = [
   ["src/components/ocIcons.jsx", null, null],
   ["src/components/pieceIcons.jsx", null, null],
   ["src/components/modeHero.jsx", null, null],
-  ["src/components/botTierButton.jsx", null, null],   // (v0.8.0) 봇 수준 버튼 — 파셋 기물·왕관·모서리 보석   // (v0.8.0) 플레이 탭 모드 소개 박스 — 모드 아이콘 5종과 장면(모두 채운 면)   // (v0.7.9) 새 파셋 기물 6종·8×8 보드 아이콘
+  ["src/components/botTierButton.jsx", null, null],
+  ["src/components/streakAttend.jsx", null, null],   // (v0.8.0) 연속 출석 애니메이션 — 파셋 다이아몬드 칸   // (v0.8.0) 봇 수준 버튼 — 파셋 기물·왕관·모서리 보석   // (v0.8.0) 플레이 탭 모드 소개 박스 — 모드 아이콘 5종과 장면(모두 채운 면)   // (v0.7.9) 새 파셋 기물 6종·8×8 보드 아이콘
   ["src/components/dexCardKit.jsx", "export function CardEmblem(", "\n}\n"],   // (v0.7.9) 마스터 상세 카드 엠블럼
   ["src/app/lessons.jsx", "function GlyphChip(", "\n}\n"],   // (v0.7.9) 레슨 아이콘 배지 바탕   // (v0.7.5) 사이트 전체 UI 아이콘 세트(예전 lucide 대체)
   ["src/components/titleEmblems.jsx", "const FacetSquare", "// 그림자(검정 단색"],
   ["src/app/analysis.jsx", "function CrownIcon(", "\n}\n"],
   ["src/app/play.jsx", "function MgCrosshair(", "\n}\n"],
   ["src/components/deckmateAnim.jsx", "function DeckCardFace(", "\n}\n"],   // (v0.8.0) 데크메이트 카드(play.jsx DeckmateCard에서 옮김)
-  ["src/components/postBackdrops.jsx", "function FacetStar(", "export function LegacyPostBackdrop("],   // (v0.7.9) 소셜 게시물 배경 — 별·별자리 선·코너 브래킷(모두 채운 면)   // (예전 v0.7.8 퍼즐 테마별 배경 그림 puzzleThemeBackdrop.jsx는 삭제)
+  ["src/components/postBackdrops.jsx", "function FacetStar(", "export function LegacyPostBackdrop("],   // (v0.7.9) 소셜 게시물 배경 — 별·별자리 선·(v0.8.0) 전류(모두 채운 면)   // (예전 v0.7.8 퍼즐 테마별 배경 그림 puzzleThemeBackdrop.jsx는 삭제)
   ["src/app/dexMasters.jsx", "function Laurel(", "\n}\n"],
   ["src/app/common.jsx", "export function LaurelBranch(", "\n}\n"],
   ["src/app/common.jsx", "export function SeriesGlyph(", "</svg>"],   // 뒤따르는 lucide 아이콘은 예외
