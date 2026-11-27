@@ -375,9 +375,15 @@ export function preloadMascotArt() {
   Object.values(MASCOT_ART).forEach((src) => { const im = new Image(); im.decoding = "async"; im.src = src; });
 }
 const josaIGa = (w) => w + (hasBatchim(w) ? "이" : "가");
-export function useOpeningTreeAuto(priorityRef, contentVer) {
+// (v0.8.0, 사용자 요청: 분석 탭 수 블록 통계를 빨리) statsOn — 채택률(Lichess) 조회는 도감 탭을 처음 열었을 때부터 한다. 예전엔 앱이 켜지자마자
+//  이론 수 노드 수천 곳을 8개씩 동시에 물어, 서버 호출 한도(IP당 분당 90회)를 분석 탭과 나눠 쓰며 분석 탭 통계가 429(한도 초과) 대기·재시도에 밀렸다.
+//  트리 구조(이론 수)는 네트워크 없이 바로 만들어지므로 도감 모식도 미리 계산(computeDexLayout)은 그대로다.
+export function useOpeningTreeAuto(priorityRef, contentVer, statsOn = true) {
   const [version, setVersion] = useState(0);
   const mapRef = useRef(new Map());
+  const statsOnRef = useRef(statsOn); statsOnRef.current = statsOn;
+  const kickFetchRef = useRef(() => { });
+  useEffect(() => { if (statsOn) kickFetchRef.current(); }, [statsOn]);
   useEffect(() => {
     let cancelled = false;
     mapRef.current = new Map();
@@ -414,6 +420,7 @@ export function useOpeningTreeAuto(priorityRef, contentVer) {
     // 다음 노드를 골라 O(노드 수²)로 앱 시작을 늦췄다 — 구조 큐는 순서대로(FIFO), 조회 큐만 선택 갈래를 앞당긴다.
     let idleWaiting = false;
     const runFetchQueue = () => {
+      if (!statsOnRef.current) return;   // (v0.8.0) 도감 탭을 열기 전에는 채택률을 묻지 않는다(statsOn이 켜지면 kickFetchRef로 시작)
       // 분석 탭 같은 앞쪽 조회가 진행 중이면 새 백그라운드 조회는 그 조회가 끝난 뒤(+짧은 여유)에 시작한다.
       if (fetchQueue.length && lichessForegroundBusy()) {
         if (!idleWaiting) { idleWaiting = true; whenLichessIdle().then(() => setTimeout(() => { idleWaiting = false; if (!cancelled) runFetchQueue(); }, 250)); }
@@ -429,6 +436,7 @@ export function useOpeningTreeAuto(priorityRef, contentVer) {
       }
     };
     const enqueueFetch = (key, run) => { fetchQueue.push({ key, run }); runFetchQueue(); };
+    kickFetchRef.current = () => { if (!cancelled) runFetchQueue(); };
     const runNext = () => {
       if (cancelled) return;
       while (active < MAX_CONCURRENT && queue.length && started < MAX_NODES) {
@@ -609,15 +617,17 @@ export function dailyQuestQuestsValid(quests) {
 export function useDailyPuzzle(engine, dateStr) {
   const t = dateStr || todayStr();
   const [resolved, setResolved] = useState(null); // {date, puzzle}
+  const [retry, setRetry] = useState(0);   // (v0.8.0, BUG-200) 조회 실패 시 30초 뒤 다시 묻는다
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false, timer = 0;
     // (v0.5.0 변경) 대부분의 경로(커뮤니티 선정)는 엔진이 필요 없어져, 엔진 준비를 기다리지 않고
     // 곧바로 시도한다 — 드문 개발자 오버라이드 경로만 엔진이 필요한데, resolveDailyPuzzleCached가
     // 그 경우엔 캐시를 확정하지 않으므로 엔진이 나중에 준비되면(의존성 배열의 engine.status 변화로)
     // 이 effect가 다시 실행되어 자연히 재시도된다.
-    resolveDailyPuzzleCached(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); });
-    return () => { cancelled = true; };
-  }, [t, engine && engine.status]);
+    resolveDailyPuzzleCached(t, engine).then((pz) => { if (!cancelled) setResolved({ date: t, puzzle: pz }); })
+      .catch(() => { if (!cancelled) timer = setTimeout(() => setRetry((n) => n + 1), 30000); });
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [t, engine && engine.status, retry]);
   return (resolved && resolved.date === t) ? resolved.puzzle : null;
 }
 export const ALL_TITLE_IDS = _ALL_TITLE_IDS;
@@ -1192,7 +1202,10 @@ export const TABS = [{ key: "analysis", label: t("분석"), Icon: null }, { key:
 // 예전엔 분석이 "learn", 학습이 "quest"라는 키를 써서 경로(/analysis·/learn)와 코드가 엇갈렸다.
 export const TAB_PATH = { analysis: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/social", learn: "/learn", store: "/play", set: "/setting" };
 const PATH_TAB = { "/analysis": "analysis", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/social": "puzzle", "/puzzle": "puzzle", "/learn": "learn", "/play": "store", "/setting": "set" };
-export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
+export function tabFromPath(pathname) {
+  if (/^\/play\/[a-z]+\/?$/.test(pathname || "")) return "store";   // (v0.8.0) 플레이 탭 모드 화면 하위 주소(/play/standard 등 — play.jsx PLAY_SUB_OF)
+  return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null;
+}
 // (v0.7.5, 사용자 요청 — 새로고침 UX) 첫 화면부터 맞는 탭을 그린다. 예전엔 탭 주소가 아닌 곳(/, /puzzle/번호-라인, /review…, /user/…)이면
 //  일단 분석 탭을 그렸다가, 저장된 상태·서버 응답이 온 뒤(몇 초 뒤)에 원래 탭으로 바꿔 "다른 탭이 잠깐 보였다 돌아오는" 깜빡임이 생겼다.
 //  ① 탭 주소면 그 탭 ② 퍼즐 딥링크면 퍼즐 탭 ③ 그 밖에는 마지막으로 보던 탭(LAST_TAB_KEY, 탭이 바뀔 때마다 동기 저장) ④ 처음이면 분석 탭.
@@ -1998,7 +2011,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
             바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
         <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14, marginTop: 4 }}>
           {/* (v0.6.8) 로고를 가운데가 아니라 왼쪽 위에 두고 조금 키웠다(30→40). 이미지의 투명 여백은 이미 잘려 있어 height가 곧 실제 크기. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 40, width: "auto" }} />
+          <img src="/OpenChessLogo.webp" alt="OpenChess" style={{ display: "block", height: 40, width: "auto" }} />
         </div>
         <div style={{ marginBottom: 14, paddingRight: 30 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>

@@ -54,22 +54,72 @@ export async function lichessFetchWithRetry(url) {
   return res;
 }
 // (기능) 외부 대국 데이터베이스(선수/이벤트/오프닝 묶음)에서 뽑아낸 정적 마스터 대국 —
-// scripts/build-master-games.mjs로 public/master-games.json 생성. Lichess 마스터 DB 표본이
+// scripts/build-master-games.mjs로 data/master-games.json 생성. Lichess 마스터 DB 표본이
 // 적은 포지션을 보충하려고 만들었지만, 지금은 "출처 구분 없이 항상 합쳐서 보여주기"로 정해서
 // 매번 Lichess·개발자 추가분과 함께 합친다. 최초 1회만 fetch해서 메모리에 캐싱 — 파일이 몇 MB급이라
 // 초기 번들에는 안 넣고 마스터 대국을 처음 조회할 때만 지연 로드한다.
 export const MASTER_DATA_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) ? import.meta.env.BASE_URL : "/";
-let masterGameData = null;
-let masterGameLoadPromise = null;
-export function loadMasterGameData() {
-  if (masterGameData) return Promise.resolve(masterGameData);
-  if (!masterGameLoadPromise) {
-    masterGameLoadPromise = fetch(MASTER_DATA_BASE + "master-games.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { masterGameData = d; return d; })
-      .catch(() => null);
+// (v0.8.0, 사용자 요청: 휴대폰 집중 분석에서 1.e4 같은 수에 마스터 대국이 안 나옴) 예전엔 DB 전체(public/master-games.json, 68MB·gzip 21MB)를
+//  한 번에 받아 파싱·색인했다(메모리 약 190MB) — 휴대폰에서 오래 걸리거나 실패했고, 실패한 결과(null)를 계속 돌려줘 새로고침 전까지 다시 시도하지 않았다.
+//  이제 scripts/build-master-shards.mjs가 빌드 때 public/master/에 나눠 둔 것을 필요한 만큼만 받는다:
+//   · 3수 이상 수순 → 첫 3수가 같은 대국 조각 하나(s/<n>.json, 가장 큰 것 gzip 약 3MB)
+//   · 2수 이하 수순(1.e4 등) → top.json(gzip 약 190KB): 정확한 통계 + 연대별 고레이팅 대표 대국 300판
+//  실패한 요청은 기억하지 않고 다음에 다시 받는다.
+const MASTER_DIR = MASTER_DATA_BASE + "master/";
+const _masterCache = new Map();   // url → Promise
+function masterJson(path) {
+  const url = MASTER_DIR + path;
+  if (!_masterCache.has(url)) {
+    const p = fetch(url).then((r) => { if (!r.ok) throw new Error("master " + path + " " + r.status); return r.json(); });
+    p.catch(() => _masterCache.delete(url));
+    _masterCache.set(url, p);
   }
-  return masterGameLoadPromise;
+  return _masterCache.get(url);
+}
+const rowGame = (r) => ({ white: r[1], black: r[2], whiteElo: r[3], blackElo: r[4], event: r[5], date: r[6], result: r[7], moves: r[8] });
+const _shardData = new Map();   // 조각 번호 → { games, gis, byGi }
+async function masterShard(n) {
+  if (_shardData.has(n)) return _shardData.get(n);
+  const rows = await masterJson("s/" + n + ".json");
+  const d = { games: rows.map(rowGame), gis: rows.map((r) => r[0]) };
+  d.byGi = new Map(d.gis.map((gi, i) => [gi, i]));
+  _shardData.set(n, d);
+  return d;
+}
+const _stripTok = (s) => String(s || "").replace(/[+#]/g, "");
+/** 집중 분석 마스터 대국: 이 수순으로 시작하는 정적 DB 대국 목록과 통계. sample=true면 대국이 많아 대표 대국만(total은 전체 판수). */
+export async function masterGamesFor(sans) {
+  const key = sans.map(_stripTok);
+  if (!key.length) return { games: [], stats: null, total: 0, sample: false };
+  const idx = await masterJson("idx.json");
+  if (key.length <= (idx.topPlies || 2)) {
+    const top = await masterJson("top.json");
+    const e = top[key.join(" ")];
+    if (!e) return { games: [], stats: { white: 0, draws: 0, black: 0, moves: [] }, total: 0, sample: false };
+    const games = e.g.map((r) => masterDisplayGame(r[0], rowGame(r), r[8]));
+    const stats = { white: e.st[0], draws: e.st[1], black: e.st[2], moves: e.st[3].map((m) => ({ san: m[0], white: m[1], draws: m[2], black: m[3], avg: null })) };
+    return { games, stats, total: e.n, sample: e.n > games.length };
+  }
+  const n = idx.keys.indexOf(key.slice(0, idx.plies || 3).join(" "));
+  if (n < 0) return { games: [], stats: { white: 0, draws: 0, black: 0, moves: [] }, total: 0, sample: false };   // DB에 없는 수순 — 원본과 같이 0판 통계
+  const sh = await masterShard(n);
+  const games = staticMasterGameIdxsFor(sans, sh).map((i) => masterDisplayGame(sh.gis[i], sh.games[i], String(sh.games[i].moves || "").split(" ")[sans.length] || null));
+  return { games, stats: staticMasterStatsFor(sans, sh), total: games.length, sample: false };
+}
+/** 정적 DB 대국(extm_gi) 하나의 전체 수순 — 그 대국이 든 조각만 받는다. */
+export async function masterGameMoves(gi) {
+  const idx = await masterJson("idx.json");
+  const code = idx.shardOf.substr(gi * 2, 2);
+  if (code.length !== 2) return null;
+  const sh = await masterShard(parseInt(code, 36));
+  const i = sh.byGi.get(gi);
+  return i == null ? null : String(sh.games[i].moves || "").split(" ").filter(Boolean);
+}
+/** 화면용 대국 객체(집중 분석 마스터 대국 목록) — 원본 DB 대국 g와 번호 gi. */
+export function masterDisplayGame(gi, g, nextSan) {
+  const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
+  const year = g.date ? parseInt(String(g.date).slice(0, 4), 10) : null;
+  return { id: "extm_" + gi, nextSan: nextSan || null, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null, event: g.event || "", date: /^\d{4}\.\d\d\.\d\d$/.test(g.date || "") ? g.date : null };   // date(YYYY.MM.DD): 같은 해 안에서 일정순 정렬   // event: 집중 분석 마스터 대국의 검색·표시
 }
 // (v0.6.6, 사용자 요청) 정적 마스터 대국 DB에서 "이 수순으로 시작하는 모든 대국"을 찾는 접두사 색인.
 // 예전엔 build-master-games.mjs가 openings.json 트리 노드(3,985곳)마다 미리 뽑아 둔 index를 썼다 — 트리 밖의 포지션은 대국이 있어도 못 찾았고,
@@ -107,12 +157,7 @@ export function staticMasterGameIdxsFor(sans, data) {
 const _resOf = (r) => (r === "1-0" ? "w" : r === "0-1" ? "b" : "d");
 export function staticMasterGamesFor(sans, data) {
   if (!data) return [];
-  return staticMasterGameIdxsFor(sans, data).map((gi) => {
-    const g = data.games[gi];
-    const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
-    const year = g.date ? parseInt(g.date.slice(0, 4), 10) : null;
-    return { id: "extm_" + gi, nextSan: String(g.moves || "").split(" ")[sans.length] || null, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null, event: g.event || "", date: /^\d{4}\.\d\d\.\d\d$/.test(g.date || "") ? g.date : null };   // date(YYYY.MM.DD): 같은 해 안에서 일정순 정렬   // event: 집중 분석 마스터 대국의 검색·표시
-  });
+  return staticMasterGameIdxsFor(sans, data).map((gi) => masterDisplayGame(gi, data.games[gi], String(data.games[gi].moves || "").split(" ")[sans.length] || null));
 }
 /** 이 포지션 이후 정적 DB 대국의 승·무·패와 많이 둔 다음 수(Lichess 통계를 못 받을 때의 대체이자 오프라인 통계). */
 export function staticMasterStatsFor(sans, data) {

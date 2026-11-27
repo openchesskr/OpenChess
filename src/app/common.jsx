@@ -714,7 +714,11 @@ export async function fetchLichess(sans, master) {
     // 쓸 수 있게 한다(자르는 방식으로 표시하는 것은 아래 useCountUp에서 처리).
     return { san: m.san, games: tot, adopt: posTotal ? (100 * tot / posTotal) : 0, name: m.opening ? m.opening.name : null, wdl: { w: m.white || 0, d: m.draws || 0, b: m.black || 0 } };
   });
-  return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master };
+  // (v0.8.0, 사용자 요청: 수 블록 통계를 빨리) 이 목록이 이 포지션에서 둔 수를 빠짐없이 담았는지 — 기본 상한(12)보다 적게 왔거나 수별 판수 합이 전체 판수와 같으면
+  //  잘린 게 아니다. 그러면 목록에 없는 수는 0판이라, 분석 탭이 수마다 다음 포지션을 따로 물어보지 않아도 된다(요청 수·대기 시간 감소).
+  const sum = moves.reduce((a, m) => a + m.games, 0);
+  const complete = moves.length < 12 || (posTotal > 0 && sum === posTotal);
+  return { posTotal, opening: j.opening || null, moves, wdl: { w: j.white || 0, d: j.draws || 0, b: j.black || 0 }, master: !!master, complete };
 }
 async function fetchWiki(name) {
   if (!name) return null;
@@ -1880,7 +1884,10 @@ function keywordHistory(sans, board) {
 }
 // kwPool(v0.7.8 BUG-180): 수 키워드의 형제 비교(날카로운 수 gap·유연한 수 nearBest·손실)에 쓸 후보 묶음 — 분석 탭은 이 포지션에서 지금까지 평가된 모든 수
 //  (기준 전체/마스터 목록의 합집합)를 넘겨, 기준을 바꿔 목록이 달라져도 키워드가 같게 나오게 한다. 없으면 moves 자신.
-export function assignTiers(moves, ply, board, keyStr, sans, kwPool) {
+// (v0.8.0) 수 키워드에 쓸 수 있는 확정 평가인지 — 엔진 탐색 도중의 임시 값(live.prov)은 아니다. liveOnly(라이브 분석 중)면 정적 스냅샷 평가도 아니다.
+export function kwSettled(m, liveOnly) { return m.live ? !m.live.prov : !liveOnly; }
+export function assignTiers(moves, ply, board, keyStr, sans, kwPool, kwOpts) {
+  const liveOnly = !!(kwOpts && kwOpts.liveOnly);
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
@@ -1899,11 +1906,14 @@ export function assignTiers(moves, ply, board, keyStr, sans, kwPool) {
   const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
   // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드(v0.7.8: 맞는 것 전부 kwAutoAll, 대표 kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
   //  형제 수 평가로 "날카로운 수"(이 수만 좋음: gap)·"유연한 수"(좋은 수가 여럿: nearBest)를, 수순으로 반복·대칭(history·prevSan)을 판단한다.
-  const evs = moves.map((m) => moverEval(m, ply));
+  // (v0.8.0, 사용자 요청) 키워드용 평가는 확정 값만(kwSettled) — 임시 값이면 kwPool의 같은 수의 마지막 확정 값, 그것도 없으면 "모름"(그 조건만 건너뜀).
+  //  예전엔 낮은 depth의 흔들리는 값·다른 목록의 낡은 값이 섞여, 등급은 최선인데 키워드는 LOW-LEVEL인 모순이 생겼다.
+  const poolBy = new Map((kwPool || []).filter((pm) => kwSettled(pm, liveOnly)).map((pm) => [stripSuffix(pm.san), pm]));
+  const evs = moves.map((m) => { if (kwSettled(m, liveOnly)) return moverEval(m, ply); const pm = poolBy.get(stripSuffix(m.san)); return pm ? moverEval(pm, ply) : null; });
   const allEval = evs.every((v) => v != null);
   // 키워드용 비교 묶음 — 지금 목록 + kwPool(목록에 없는 수만 더함, 지금 목록의 최신 평가가 우선)
   const poolEv = new Map(moves.map((m, i) => [stripSuffix(m.san), evs[i]]));
-  for (const pm of kwPool || []) { const k = stripSuffix(pm.san); if (!poolEv.has(k)) { const v = moverEval(pm, ply); if (v != null) poolEv.set(k, v); } }
+  for (const [k, pm] of poolBy) { if (poolEv.get(k) == null) { const v = moverEval(pm, ply); if (v != null) poolEv.set(k, v); } }
   const poolVals = [...poolEv.values()].filter((v) => v != null);
   const kwBest = poolVals.length ? Math.max(...poolVals) : best;
   const nearBest = kwBest == null ? null : poolVals.filter((v) => kwBest - v <= 30).length;
@@ -1915,7 +1925,7 @@ export function assignTiers(moves, ply, board, keyStr, sans, kwPool) {
     const others = [...poolEv.entries()].filter(([k, v]) => k !== self && v != null).map(([, v]) => v);
     const gapCp = allEval && mv != null && others.length ? mv - Math.max(...others) : null;
     const kwAutoAll = autoMoveKeywords({ san: m.san, color, board, lossCp: mv != null && kwBest != null ? Math.max(0, kwBest - mv) : null, isBest: mv != null && kwBest != null && mv >= kwBest, gapCp, nearBest, evalCp: mv, kind: out.kind,
-      adopt: m.allAdopt !== undefined ? m.allAdopt : m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history });   // (v0.7.8 BUG-180) 기준(전체/마스터)과 무관한 전체 채택률
+      adopt: m.allAdopt !== undefined ? m.allAdopt : m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history, ply });   // (v0.7.8 BUG-180) 기준(전체/마스터)과 무관한 전체 채택률
     return { ...out, kwAuto: kwAutoAll[0], kwAutoAll };   // (v0.7.8, 사용자 요청) 조건에 맞는 키워드 전부 — kwAuto는 대표(첫) 키워드
   };
   return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));
@@ -5507,13 +5517,19 @@ function chesscomMobilePlatform() {
   return null;
 }
 const CHESSCOM_APP_FALLBACK_MS = 1500;
+// (v0.8.0, 사용자 요청·BUG-216) 하늘색 글자 링크 — 데스크톱은 chess.com 웹사이트(새 탭), 휴대폰은 위 앱 열기 경로(같은 탭 + 스토어 폴백).
+//  예전엔 color: inherit라 주변 글자와 구분되지 않았고, 데스크톱도 회원가입 경로로 갔으며, 문구가 "chess.com"으로 시작할 때만 링크를 걸어
+//  영어·스페인어 등("Play 5 games on chess.com")에서는 링크가 사라졌다.
+const CHESSCOM_WEB_URL = "https://www.chess.com/";
+export const CHESSCOM_LINK_COLOR = "#2E9BE6";
 function ChesscomTextLink({ children }) {
+  const mobile = isNativeApp() || !!chesscomMobilePlatform();
   const onClick = (e) => {
     e.stopPropagation();
     // (v0.6.4) 앱(웹뷰)에서는 링크 가드가 AppLauncher로 chess.com 앱 링크를 직접 연다(data-prefer-app) — 아래 웹용 스토어 폴백 타이머는 쓰지 않는다.
     if (isNativeApp()) return;
     const platform = chesscomMobilePlatform();
-    if (!platform) return; // 데스크톱은 그냥 평범한 링크로 연다.
+    if (!platform) return; // 데스크톱은 웹사이트를 새 탭으로 연다.
     const timer = setTimeout(() => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") window.location.href = CHESSCOM_APP_STORE[platform];
     }, CHESSCOM_APP_FALLBACK_MS);
@@ -5521,12 +5537,15 @@ function ChesscomTextLink({ children }) {
     document.addEventListener("visibilitychange", cancel);
     window.addEventListener("pagehide", cancel);
   };
-  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} className="hit" style={{ "--hy": "-12px", "--hx": "-6px", color: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}>{children}</a>;
+  return <a href={mobile ? CHESSCOM_GET_APP_URL : CHESSCOM_WEB_URL} {...(mobile ? { "data-prefer-app": "1" } : { target: "_blank", rel: "noopener noreferrer" })} onClick={onClick} className="hit"
+    style={{ "--hy": "-12px", "--hx": "-6px", color: CHESSCOM_LINK_COLOR, fontWeight: 800, textDecoration: "underline", textDecorationColor: "rgba(46,155,230,.45)", textUnderlineOffset: 2 }}>{children}</a>;
 }
+/** 퀘스트 문구 — 문장 안 어디에 있든 "chess.com"에 링크를 건다(언어마다 위치가 다르다). */
 export function questLabelNode(q) {
   const text = questLabel(q);
-  if (!text.startsWith("chess.com")) return text;
-  return <>{<ChesscomTextLink>chess.com</ChesscomTextLink>}{text.slice("chess.com".length)}</>;
+  const at = text.indexOf("chess.com");
+  if (at < 0) return text;
+  return <>{text.slice(0, at)}<ChesscomTextLink>chess.com</ChesscomTextLink>{text.slice(at + "chess.com".length)}</>;
 }
 /* ============================================================ 일일 퍼즐 ============================================================ */
 // (v0.5.0 기능, 사용자 요청 — 기존 v0.2.4 리체스 오프닝 테마 로테이션 방식 폐기) 예전엔 개발자가
@@ -5543,18 +5562,22 @@ export function questLabelNode(q) {
 // 다시 돌릴 필요도 없다 — 날짜를 시드로 그 라인 중 하나를 결정적으로 골라 "XXXXXX-N" id를 부여
 // (기존과 동일한 규칙, dailyLineId). 개발자가 daily_puzzles_dev에 그 날짜의 PGN을 직접 등록해
 // 뒀으면(미래 날짜 예약·이벤트용 비상 수단으로 남겨 둠) 자동 선정 대신 그 포지션을 쓴다.
+// (v0.8.0, BUG-200) 일일 퍼즐 조회 실패 — "그 날짜 퍼즐 없음"(null)과 구분한다. 예전엔 조회 오류도 null로 삼켜
+//  화면이 "없음"과 "실패"를 가르지 못했고(카드가 끝없이 로딩 모양), 일시적 오류의 null이 날짜 캐시에 남아 새로고침 전까지 다시 묻지 않았다.
+export class DailyPuzzleFetchError extends Error { constructor(what, cause) { super("daily puzzle fetch failed: " + what); this.name = "DailyPuzzleFetchError"; this.cause = cause; } }
 async function fetchDailyPuzzlePick(dateStr) {
   if (!SB_ON) return null;
   try {
     const rows = await sbSelect("daily_puzzle_picks?date=eq." + dateStr + "&select=puzzle_no&limit=1");
     return rows && rows[0] ? rows[0].puzzle_no : null;
-  } catch { return null; }
+  } catch (e) { throw new DailyPuzzleFetchError("pick", e); }
 }
 async function fetchDailyPuzzleOverride(dateStr) {
+  if (!SB_ON) return null;
   try {
     const rows = await sbSelect("daily_puzzles_dev?date=eq." + dateStr + "&select=date,sans,puzzle_ply,opening&limit=1");
     return rows && rows[0] ? rows[0] : null;
-  } catch { return null; }
+  } catch (e) { throw new DailyPuzzleFetchError("override", e); }
 }
 // XXXXXX-N — XXXXXX는 퍼즐 시작 포지션(설정 수순)의 puzzleNo 해시, N은 genPuzzleTree가 만든 여러
 // 라인 중 몇 번째 줄을 뽑았는지(1부터, 사람이 읽기 쉬운 번호).
@@ -5590,7 +5613,9 @@ async function resolveDailyPuzzle(dateStr, engine) {
     try { no = await sbRpc("daily_puzzle_pick_ensure_today", {}); } catch { no = null; }
   }
   if (!no) return null; // 그 날짜 몫이 없음(지난 날짜이거나 공개 퍼즐이 하나도 없음) — 미배정으로 취급
-  const p = await puzzleFetch(no);
+  let p;
+  try { const rows = await sbSelect("puzzles?no=eq." + no + "&select=data,is_public&limit=1"); p = rows && rows[0] ? rows[0].data : null; }
+  catch (e) { throw new DailyPuzzleFetchError("puzzle", e); }   // (v0.8.0, BUG-200) puzzleFetch는 오류를 null로 삼키므로 여기선 직접 조회
   // (성능) 창작 시점에 이미 genPuzzleTree로 여러 응수 라인이 만들어져 puzzles.data에 그대로 저장돼
   // 있으므로, 로컬 엔진을 다시 돌릴 필요가 없다 — 날짜를 시드로 그 라인 중 하나만 결정적으로 고른다.
   if (!p || !p.lines || !p.lines.length) return null;
@@ -5613,7 +5638,7 @@ async function fetchDailyPuzzleCache(dateStr) {
   try {
     const rows = await sbSelect("daily_puzzle_cache?date=eq." + dateStr + "&select=data&limit=1");
     return rows && rows[0] ? rows[0].data : null;
-  } catch { return null; }
+  } catch (e) { throw new DailyPuzzleFetchError("cache", e); }
 }
 async function saveDailyPuzzleCache(dateStr, pz) {
   if (!SB_ON || !pz) return;
@@ -5654,6 +5679,10 @@ export function resolveDailyPuzzleCached(dateStr, engine) {
       else if (!engine || engine.status !== "ready") dailyPuzzleResolveCache.delete(dateStr);
       return pz;
     });
+  }).catch((e) => {
+    // (v0.8.0, BUG-200) 실패한 결과는 캐시에 남기지 않는다 — 다음 요청(다시 시도 버튼·탭 재진입) 때 새로 묻는다.
+    if (dailyPuzzleResolveCache.get(dateStr) === p) dailyPuzzleResolveCache.delete(dateStr);
+    throw e;
   });
   dailyPuzzleResolveCache.set(dateStr, p);
   return p;

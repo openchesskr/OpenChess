@@ -81,7 +81,7 @@ export async function loadReviewShareCardAssets(data) {
   const moves = data.moves || [];
   const kinds = ANALYSIS_KIND_ROWS.map(([k]) => k).filter((k) => moves.some((m) => m.kind === k));
   const [logoImg, whiteKingImg, blackKingImg, whiteAvatarImg, blackAvatarImg, ...badgeImgs] = await Promise.all([
-    loadImageSafe("/OpenChessLogo.png"),
+    loadImageSafe("/OpenChessLogo.webp"),
     loadImageSafe(PIECE_IMG_SETS.classic.images.K.w.src),
     loadImageSafe(PIECE_IMG_SETS.classic.images.K.b.src),
     loadImageSafe(data.whiteAvatarUrl, "anonymous"),

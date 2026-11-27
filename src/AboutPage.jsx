@@ -10,6 +10,7 @@ import { FacetDiamond, FacetCrown, GOLD, facetRamp } from "./components/facetIco
 import { QCOLOR } from "./lib/moveKinds.js";
 import { PieceIcon, PIECE_TYPES } from "./components/pieceIcons.jsx";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
+import { usePageTitle } from "./lib/pageTitle.js";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프는 App.jsx의 T 객체·
@@ -312,13 +313,13 @@ function FamousOpeningsSection() {
 
 function TierStrip() {
   const tiers = [
-    { key: "iron", label: t("아이언"), img: "/iron-pawn.png" },
-    { key: "bronze", label: t("브론즈"), img: "/bronze-knight.png" },
-    { key: "silver", label: t("실버"), img: "/silver-bishop.png" },
-    { key: "gold", label: t("골드"), img: "/gold-rook.png" },
-    { key: "diamond", label: t("다이아몬드"), img: "/diamond-queen.png" },
-    { key: "master", label: t("마스터"), img: "/master-king.png" },
-    { key: "grandmaster", label: t("그랜드마스터"), img: "/gm-piece.png" },
+    { key: "iron", label: t("아이언"), img: "/iron-pawn.webp" },
+    { key: "bronze", label: t("브론즈"), img: "/bronze-knight.webp" },
+    { key: "silver", label: t("실버"), img: "/silver-bishop.webp" },
+    { key: "gold", label: t("골드"), img: "/gold-rook.webp" },
+    { key: "diamond", label: t("다이아몬드"), img: "/diamond-queen.webp" },
+    { key: "master", label: t("마스터"), img: "/master-king.webp" },
+    { key: "grandmaster", label: t("그랜드마스터"), img: "/gm-piece.webp" },
   ];
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
@@ -481,70 +482,101 @@ const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27
 
 
 
-// (v0.7.9) 이번 버전(최신)의 핵심 — "대화로 배우는 레슨" 버전. 왼쪽 큰 카드에 두 코치의 말풍선 대화가 차례로 쌓이는 데모,
-//  오른쪽에 새 단계 "계산과 조합"(수순 계단)·모든 레슨의 테마 퍼즐(새 파셋 기물 6종), 아래 줄 전체에 첫 화면 속도(전·후 막대)와 탭별 소식.
+// (v0.8.0) 이번 버전(최신)의 핵심 — "두 코치 봇과 한곳에 모인 순위" 버전. 왼쪽 큰 카드는 KOKOA(탈)·MILKU(피셔) 두 봇이 서로 다른 수를 두는 데모,
+//  오른쪽은 데크메이트(카드가 Bxf7+로 모이는 작은 데모)와 리더보드(종목 이름표가 옆으로 흐르고 전체/친구가 바뀜), 아래 줄 전체에 분석 탭 속도와 탭별 소식.
 //  장식은 모두 채운 면(CLAUDE.md 파셋 규칙). 코치 그림은 사이트 마스코트 이미지(/mascot).
-const TALK_DEMO = () => [
-  ["kokoa", "kokoa_happy", t("지난 레슨 「포크」, 기억나요?")],
-  ["milku", "milku_wink", t("핵심은 이 한 줄이었어요. 「두 기물을 한 번에」")],
-  ["kokoa", "kokoa_think", t("그럼 이번엔 한 줄 위의 두 기물을 묶는 거죠?")],
-  ["milku", "milku_great", t("맞아요. 이번 레슨은 「핀」입니다.")],
+const BOT_DUEL = () => [
+  { who: "kokoa", img: "kokoa_celebrate", elo: 2705, style: t("희생과 복잡한 포지션"), move: "Bxf7+!", meter: 0.86, color: "#E0995F" },
+  { who: "milku", img: "milku_great", elo: 2785, style: t("정확한 수와 확실한 우세"), move: "Rd7", meter: 0.94, color: "#6FA8DC" },
 ];
-function TalkDemo() {
+function BotDuel() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 18 }}>
-      {TALK_DEMO().map(([who, img, text], i) => {
-        const k = who === "kokoa";
-        return (
-          <motion.div key={i} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: 0.25 + i * 0.45, duration: 0.35 }}
-            style={{ display: "flex", flexDirection: k ? "row-reverse" : "row", alignItems: "flex-end", gap: 8 }}>
-            <img src={"/mascot/" + img + ".webp"} alt="" width={40} height={40} style={{ flexShrink: 0, objectFit: "contain" }} />
-            <span style={{ maxWidth: "78%", padding: "9px 13px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.5, borderRadius: k ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-              background: k ? "#3B2417" : "#F1E6D0", color: k ? "#FFE9CF" : "#2A1B0E", border: k ? "1px solid rgba(255,214,170,.22)" : "none" }}>{text}</span>
-          </motion.div>
-        );
-      })}
-    </div>
-  );
-}
-function CalcSteps() {
-  const R = facetRamp("#3E8C86"), steps = [t("2수 메이트"), t("조용한 수"), t("3수 메이트"), t("내주고 메이트"), t("메이트 위협 막기")];
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginTop: 14 }}>
-      {steps.map((s, i) => (
-        <motion.div key={i} title={s} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.08 }}
-          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <svg viewBox="0 0 30 30" width={26} height={26} aria-hidden="true"><FacetDiamond cx={15} cy={15} r={12} R={i === steps.length - 1 ? GOLD : R} gem={i === steps.length - 1} /></svg>
-          <span style={{ width: "100%", height: 10 + i * 9, background: "linear-gradient(180deg," + R.l2 + "," + R.base + ")", clipPath: "polygon(0 0,100% 0,100% 100%,0 100%)" }} />
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 12, marginTop: 18 }}>
+      {BOT_DUEL().map((b, i) => (
+        <motion.div key={b.who} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ delay: 0.15 + i * 0.25, duration: 0.45 }}
+          style={{ position: "relative", padding: "14px 12px 12px", background: "linear-gradient(160deg,#3A2516,#1F130B)", clipPath: octagon(12), textAlign: "center" }}>
+          <div style={{ position: "relative", width: 74, height: 74, margin: "0 auto 8px", borderRadius: "50%", padding: 3, background: "conic-gradient(from 210deg," + GOLD.l1 + "," + GOLD.l3 + "," + GOLD.base + "," + GOLD.l2 + "," + GOLD.l1 + ")" }}>
+            <img src={"/mascot/" + b.img + ".webp"} alt="" width={68} height={68} style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "contain", background: "#F7EEDC" }} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: ".06em", color: T.ivoryHi }}>{b.who.toUpperCase()} <span style={{ fontSize: 11.5, color: GOLD.l1 }}>{b.elo}</span></div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 3, minHeight: 32, lineHeight: 1.4 }}>{b.style}</div>
+          <div style={{ height: 6, background: "rgba(255,255,255,.08)", marginTop: 8 }}>
+            <motion.div initial={{ width: 0 }} whileInView={{ width: b.meter * 100 + "%" }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.9, delay: 0.4 + i * 0.25 }} style={{ height: "100%", background: b.color }} />
+          </div>
+          <motion.div initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.6 }} transition={{ delay: 0.9 + i * 0.3, type: "spring", stiffness: 300, damping: 14 }}
+            style={{ display: "inline-block", marginTop: 10, padding: "4px 12px", clipPath: octagon(5), background: b.color + "33", color: b.color, fontSize: 14, fontWeight: 900, fontFamily: "Georgia,serif" }}>{b.move}</motion.div>
         </motion.div>
       ))}
     </div>
   );
 }
-function PieceRow() {
+// 두 봇이 즐겨 두는 오프닝(실제 BOT_BOOKS의 대표 수순) — 수가 하나씩 이어진다
+const BOT_LINES = () => [
+  { who: "KOKOA", color: "#E0995F", name: t("시칠리안 나이도르프"), sans: ["1.e4", "c5", "2.Nf3", "d6", "3.d4", "cxd4", "4.Nxd4", "Nf6", "5.Nc3", "a6"] },
+  { who: "MILKU", color: "#6FA8DC", name: t("루이 로페즈"), sans: ["1.e4", "e5", "2.Nf3", "Nc6", "3.Bb5", "a6", "4.Bxc6", "dxc6"] },
+];
+function BotLines() {
   return (
-    <div className="flex items-end" style={{ gap: 4, marginTop: 14 }}>
-      {PIECE_TYPES.map((p, i) => (
-        <motion.span key={p} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.06 }}>
-          <PieceIcon type={p} size={30} color={i % 2 ? "gold" : "w"} />
-        </motion.span>
+    <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+      {BOT_LINES().map((l, i) => (
+        <div key={l.who} style={{ padding: "10px 12px", background: "rgba(255,255,255,.04)", clipPath: octagon(8) }}>
+          <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".08em", color: l.color }}>{l.who}</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ivoryHi }}>{l.name}</span>
+          </div>
+          <div className="flex flex-wrap" style={{ gap: 4 }}>
+            {l.sans.map((m, k) => (
+              <motion.span key={k} initial={{ opacity: 0, y: 6 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.6 }} transition={{ delay: 0.3 + i * 0.4 + k * 0.08 }}
+                style={{ padding: "2px 7px", fontSize: 11.5, fontWeight: 800, fontFamily: "Georgia,serif", color: m.includes(".") ? T.ivoryHi : T.inkSoft, background: m.includes(".") ? l.color + "26" : "transparent" }}>{m}</motion.span>
+            ))}
+          </div>
+        </div>
       ))}
-      <span style={{ marginLeft: 8, fontFamily: "Georgia,serif", fontSize: 26, fontWeight: 900, color: "#A9C589", lineHeight: 1 }}>767</span>
     </div>
   );
 }
-function SpeedBars() {
-  const rows = [[t("이전"), 996, "#8A7A66"], ["v0.7.9", 618, "#6FA8DC"]];
+function DeckCards() {
+  const cards = ["B", "x", "f", "7", "+"], R = facetRamp("#E9D8B4");
   return (
-    <div style={{ display: "grid", gap: 8, marginTop: 14, maxWidth: 520 }}>
-      {rows.map(([label, kb, c], i) => (
-        <div key={i} className="flex items-center" style={{ gap: 10 }}>
-          <span style={{ width: 54, fontSize: 11, fontWeight: 800, color: T.inkSoft }}>{label}</span>
-          <div style={{ flex: 1, height: 12, background: "rgba(255,255,255,.06)" }}>
-            <motion.div initial={{ width: 0 }} whileInView={{ width: (kb / 996) * 100 + "%" }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.9, delay: i * 0.2, ease: [0.22, 0.9, 0.32, 1] }}
-              style={{ height: "100%", background: "linear-gradient(180deg," + c + "," + c + "AA)" }} />
+    <div style={{ position: "relative", height: 74, marginTop: 14, display: "flex", justifyContent: "center", alignItems: "flex-end" }}>
+      {cards.map((c, i) => (
+        <motion.span key={i} initial={{ rotate: (i - 2) * 16, y: 0, x: (i - 2) * -8 }} whileInView={{ rotate: 0, y: 0, x: 0 }} viewport={{ once: false, amount: 0.7 }} transition={{ delay: 0.5 + i * 0.06, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          style={{ width: 34, height: 48, marginLeft: i ? 4 : 0, transformOrigin: "50% 160%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: "#5A3A22",
+            background: "linear-gradient(135deg," + R.hi + " 0 48%," + R.l1 + " 52% 100%)", clipPath: octagon(5), boxShadow: "0 6px 12px -6px rgba(0,0,0,.6)" }}>{c}</motion.span>
+      ))}
+    </div>
+  );
+}
+function BoardTicker() {
+  const items = [t("일반 대국"), t("좌표 인지 게임"), t("나이트 레이스"), t("무한 체크메이트 게임"), t("백랭크 러시아워"), t("퍼즐 XP"), t("퍼즐 레이팅"), t("칭호")];
+  const [scope, setScope] = useState(0);
+  useEffect(() => { if (isLite()) return undefined; const id = setInterval(() => setScope((v) => 1 - v), 2200); return () => clearInterval(id); }, []);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="flex justify-end" style={{ marginBottom: 8 }}>
+        <span style={{ display: "inline-flex", padding: 2, background: "rgba(255,255,255,.06)", clipPath: octagon(5) }}>
+          {[t("전체"), t("친구")].map((l, i) => <span key={l} style={{ padding: "3px 10px", fontSize: 11, fontWeight: 800, background: scope === i ? "#C49A50" : "transparent", color: scope === i ? "#241509" : T.inkSoft, transition: "background .3s" }}>{l}</span>)}
+        </span>
+      </div>
+      <div style={{ overflow: "hidden", WebkitMaskImage: "linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)", maskImage: "linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)" }}>
+        <motion.div animate={isLite() ? undefined : { x: ["0%", "-50%"] }} transition={{ duration: 16, repeat: LOOP(), ease: "linear" }} style={{ display: "flex", gap: 6, width: "max-content" }}>
+          {[...items, ...items].map((l, i) => <span key={i} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", background: "rgba(196,154,80,.14)", color: T.ivoryHi, clipPath: octagon(5) }}>{l}</span>)}
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+function FastBars() {
+  const rows = [[t("이미지 용량 감량"), 49, "MB"], [t("평가 대기 단축"), 5, "s"]];
+  return (
+    <div className="flex flex-wrap" style={{ gap: 18, marginTop: 14 }}>
+      {rows.map(([label, n, unit], i) => (
+        <div key={i} style={{ minWidth: 150 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft }}>{label}</div>
+          <div className="flex items-baseline" style={{ gap: 4 }}>
+            <motion.span initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.6 }} transition={{ delay: i * 0.2 }} style={{ fontFamily: "Georgia,serif", fontSize: 34, fontWeight: 900, color: "#8FD3C8", lineHeight: 1.1 }}>−{n}</motion.span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.ivoryHi }}>{unit}</span>
           </div>
-          <span style={{ width: 62, textAlign: "right", fontSize: 11.5, fontWeight: 900, color: T.ivoryHi, fontVariantNumeric: "tabular-nums" }}>{kb}KB</span>
         </div>
       ))}
     </div>
@@ -572,21 +604,22 @@ function WhatsNew({ version }) {
   const chip = (Icon, label, c) => <span key={label} className="inline-flex items-center" style={{ gap: 6, padding: "6px 12px", clipPath: octagon(6), background: c + "26", color: T.ivoryHi, fontSize: 12, fontWeight: 800 }}><Icon size={14} color={c} />{label}</span>;
   return (
     <section id="new" style={{ scrollMarginTop: 80 }}>
-      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 대화로 배우는 레슨입니다")} desc={t("두 코치가 지난 레슨을 짚어 주고, 개념을 먼저 설명한 뒤 문제를 냅니다. 새 단계와 모든 레슨의 테마 퍼즐이 생겼고 첫 화면도 빨라졌습니다.")} />
+      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("두 코치 봇, 한곳에 모인 순위")} desc={t("탈과 피셔의 기풍을 닮은 KOKOA와 MILKU 봇이 생기고, 소셜 탭 순위를 한 블록에서 넘겨 봅니다. 분석 탭은 휴대폰에서도 가볍고 빨라졌습니다.")} />
       <div className="about-bento-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 14 }}>
-        <NewPanel i={0} span={2} rows={2} color={T.brassHi} Icon={MessageCircle} tag={t("두 코치의 대화")} title={t("설명하고, 묻고, 이어 갑니다")}
-          desc={t("MILKU와 KOKOA가 말풍선을 주고받으며 지난 레슨을 요약하고, 문제를 내기 전에 그 개념을 먼저 설명합니다. 모든 레슨이 지난 레슨의 복습 문제로 시작합니다.")}>
-          <TalkDemo />
+        <NewPanel i={0} span={2} rows={2} color={T.brassHi} Icon={Crown} tag={t("코치 봇")} title={t("같은 포지션, 다른 기풍")}
+          desc={t("KOKOA는 희생으로 포지션을 복잡하게 만들고, MILKU는 정확한 수로 확실한 우세를 쌓습니다. 오프닝도 두 사람이 즐겨 두던 수를 따릅니다.")}>
+          <BotDuel />
+          <BotLines />
         </NewPanel>
-        <NewPanel i={1} color="#3E8C86" Icon={Crosshair} tag={t("새 단계")} title={t("계산과 조합")} desc={t("2수 메이트부터 메이트 위협 막기까지, 여러 수를 이어 읽는 다섯 레슨입니다.")}>
-          <CalcSteps />
+        <NewPanel i={1} color="#E0995F" Icon={Gem} tag={t("데크메이트")} title={t("카드가 기보가 됩니다")} desc={t("덱 카드가 모여 Bxf7+가 되고, 체스판 위에서 그 희생이 펼쳐집니다.")}>
+          <DeckCards />
         </NewPanel>
-        <NewPanel i={2} color="#8FB55E" Icon={Puzzle} tag={t("테마 퍼즐")} title={t("모든 레슨에 추가 학습")} desc={t("레슨마다 고유 퍼즐이 있어, 레슨을 마치면 그 자리에서 바로 풉니다.")}>
-          <PieceRow />
+        <NewPanel i={2} color="#A9C589" Icon={Trophy} tag={t("리더보드")} title={t("모든 순위를 한 블록에")} desc={t("일반 대국부터 칭호까지 옆으로 넘겨 보고, 전체와 친구 순위를 바꿔 봅니다.")}>
+          <BoardTicker />
         </NewPanel>
-        <NewPanel i={3} span={3} color="#6FA8DC" Icon={Zap} tag={t("성능")} title={t("더 빨리 뜨는 첫 화면")} desc={t("처음 받는 파일을 크게 줄이고 번역 파일을 나눴습니다. 분석·플레이·소셜·도감 탭도 함께 다듬었습니다.")}>
-          <SpeedBars />
-          <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>{chip(Search, t("구글식 미리보기"), "#D9736A")}{chip(Play, t("유튜브식 댓글"), "#E06B5B")}{chip(Trophy, t("데스크톱 2단 대국"), T.brassHi)}{chip(Library, t("도감 카드 재디자인"), "#B98CFF")}</div>
+        <NewPanel i={3} span={3} color="#8FD3C8" Icon={Zap} tag={t("성능")} title={t("휴대폰에서도 가벼운 분석 탭")} desc={t("수를 둘 때의 렉을 없애고 평가치와 통계를 더 빨리 보여 줍니다. 이미지를 줄이고 받은 파일을 다시 쓰게 해 모든 화면이 빨라졌습니다.")}>
+          <FastBars />
+          <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>{chip(Play, t("모드별 주소"), T.brassHi)}{chip(Star, t("연속 출석"), "#E8874A")}{chip(Send, t("대국 불러오기"), "#6FA8DC")}{chip(Sparkles, t("포지션 키워드 10종"), "#C9A0DC")}{chip(BookOpen, t("레슨 용어 정리"), "#A9C589")}{chip(Search, t("빠른 리뷰 18 Lite"), "#D9736A")}</div>
         </NewPanel>
       </div>
     </section>
@@ -690,7 +723,7 @@ function HeroPhones() {
         <img src="/oc-coin.png" alt="" style={{ width: 22, height: 22 }} /><span style={{ fontSize: 13, fontWeight: 900, color: T.brassHi }}>+10</span>
       </FloatChip>
       <FloatChip x={{ left: -12 }} y={{ bottom: 120 }} delay={0.5} rot={3}>
-        <TierBadgeShape size={30}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+        <TierBadgeShape size={30}><img src="/iron-pawn.webp" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
         <div><div style={{ fontSize: 11, fontWeight: 800, color: T.ivoryHi }}>{t("아이언")} 5</div><div style={{ width: 70, height: 4, borderRadius: 2, background: "rgba(255,255,255,.15)", marginTop: 3 }}><div style={{ width: "62%", height: "100%", borderRadius: 2, background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")" }} /></div></div>
       </FloatChip>
       <FloatChip x={{ right: -6 }} y={{ bottom: 60 }} delay={0.7} rot={-5}>
@@ -747,7 +780,7 @@ function PuzzleDemo() {
     <div style={{ borderRadius: 2, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#3A2516", maxWidth: 360, margin: "0 auto", position: "relative" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         <div className="flex items-center" style={{ gap: 8 }}>
-          <TierBadgeShape size={34}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+          <TierBadgeShape size={34}><img src="/iron-pawn.webp" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
           <div><div style={{ fontSize: 12, fontWeight: 900 }}>{t("아이언")} 5</div><div style={{ width: 90, height: 4, borderRadius: 2, background: "rgba(90,58,34,.2)", marginTop: 3 }}><motion.div animate={{ width: step ? "46%" : "28%" }} style={{ height: "100%", borderRadius: 2, background: "#C49A50" }} /></div></div>
         </div>
         <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(58,37,22,.9)", color: T.brassHi, borderRadius: 2, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
@@ -803,7 +836,7 @@ function QuestDemo() {
   );
 }
 const TIER_DEMO = [
-  { img: "/iron-pawn.png", name: t("아이언"), max: 500 }, { img: "/bronze-knight.png", name: t("브론즈"), max: 2000 }, { img: "/silver-bishop.png", name: t("실버"), max: 10000 }, { img: "/gold-rook.png", name: t("골드"), max: 50000 },
+  { img: "/iron-pawn.webp", name: t("아이언"), max: 500 }, { img: "/bronze-knight.webp", name: t("브론즈"), max: 2000 }, { img: "/silver-bishop.webp", name: t("실버"), max: 10000 }, { img: "/gold-rook.webp", name: t("골드"), max: 50000 },
 ];
 function XpDemo() {
   const [xp, setXp] = useState(180);
@@ -1161,6 +1194,47 @@ const CAT = {
   security: { label: t("보안"), Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.8.0", date: "2026.11.27",
+    summary: t("플레이 탭에 탈과 피셔의 기풍을 닮은 두 코치 봇이 생기고, 소셜 탭 리더보드가 한 블록으로 모였습니다. 분석 탭은 더 빠르고 가벼워졌습니다."),
+    highlight: { kind: "icon", Icon: Crown, color: T.brassHi, label: t("탈의 기풍 KOKOA 2705, 피셔의 기풍 MILKU 2785.") },
+    sections: [
+      { cat: "feature", items: [
+        t("플레이 탭에 미하일 탈의 기풍으로 두는 KOKOA 봇(2705)과 바비 피셔의 기풍으로 두는 MILKU 봇(2785)이 생겼습니다. 그랜드마스터 봇은 2700입니다."),
+        t("소셜 탭 리더보드를 한 블록에서 옆으로 넘겨 일반 대국, 미니게임, 퍼즐 XP, 퍼즐 레이팅, 칭호 순위를 보고, 전체 순위와 친구 순위를 나눠 봅니다."),
+        t("새 게시물에서 유산과 대국도 이미지로 스캔하고, OpenChess 대국과 chess.com 대국을 골라 불러옵니다. 대국을 고르면 대국자와 결과가 자동으로 채워집니다."),
+        t("플레이 탭의 각 모드 화면이 /play/standard처럼 고유 주소를 가집니다."),
+        t("분석 탭 수 키워드에 갬빗, 이른 퀸, 피앙케토, 중앙, 공간 등 포지션의 성격을 알려 주는 키워드 10종이 추가되었습니다."),
+        t("소셜 탭에 하루 한 번 처음 들어오면 연속 출석 애니메이션이 나옵니다."),
+      ] },
+      { cat: "ui", items: [
+        t("플레이 탭 모드 소개 박스를 모드마다 고유한 애니메이션 장면으로 다시 디자인했습니다."),
+        t("데크메이트 블록에 카드가 Bxf7+ 기보가 되고 체스판 위에서 희생이 펼쳐지는 애니메이션이 생겼습니다."),
+        t("봇 수준 버튼을 크림색, 갈색, 금색으로 다시 디자인하고, 높은 수준일수록 더 화려하게 꾸몄습니다."),
+        t("분석 탭의 계산 중 안내를 코치와 미니 체스판 애니메이션이 있는 상자로 다시 디자인했습니다."),
+        t("소셜 탭 게시물의 체스보드를 더 키우고, 유산 게시물의 별자리에 유산 색 전류가 흐르며, 대국 게시물 배경을 새로 디자인했습니다."),
+        t("일일 퀘스트 완료 알림을 일일 퀘스트 블록과 같은 디자인으로 바꿨습니다."),
+        t("학습 탭 레슨의 일부 체스 용어를 우리말로 바꿨습니다. 예를 들어 캔디데이트 무브는 후보 수, 익스체인지 새크리파이스는 교환 희생이 되었습니다."),
+      ] },
+      { cat: "ux", items: [
+        t("소셜 탭 검색창을 일일 퍼즐 아래로 옮기고, 게시물 머리줄과 날짜 표기를 깔끔하게 정리했습니다."),
+        t("휴대폰 플레이 탭에서 퀘스트 페이지의 높이를 플레이 페이지에 맞췄습니다."),
+        t("빠른 리뷰가 Stockfish 18 Lite로 분석합니다."),
+      ] },
+      { cat: "perf", items: [
+        t("휴대폰 분석 탭에서 수를 둘 때 생기던 렉을 크게 줄였습니다."),
+        t("분석 탭 수 블록의 평가치와 통계가 훨씬 빨리 뜹니다."),
+        t("사이트 이미지 용량을 크게 줄이고 한 번 받은 파일은 다시 받지 않게 해 화면이 더 빨리 뜹니다."),
+      ] },
+      { cat: "fix", items: [
+        t("휴대폰 집중 분석에서 1.e4 같은 수에도 마스터 대국이 바로 뜹니다."),
+        t("분석 탭 수 키워드에서 최선의 수에도 LOW-LEVEL이 붙던 문제를 고쳤습니다."),
+        t("일일 퀘스트의 chess.com 글자가 다시 하늘색 링크가 되었습니다. 데스크톱은 웹사이트, 휴대폰은 앱으로 엽니다."),
+        t("일일 퍼즐이 없거나 불러오지 못하면 계속 로딩 중으로 보이던 문제를 고쳤습니다."),
+        t("리뷰 화면의 '1.e4 분석 중' 띄어쓰기를 고쳤습니다."),
+      ] },
+    ],
+  },
   {
     version: "0.7.9", date: "2026.11.21",
     summary: t("학습 탭 레슨이 두 코치의 대화와 지난 레슨 복습으로 이어지고, 새 단계 '계산과 조합'과 모든 레슨의 추가 학습 퍼즐이 생겼습니다. 첫 화면도 더 빨라졌습니다."),
@@ -3266,10 +3340,10 @@ const VERSION_HISTORY = [
 // 이미지·애니메이션으로 보여주는" 구성 — 버전마다 대표 기능 하나를 뽑아 아이콘 펄스, 실제 티어
 // 이미지, 또는 승급 연출을 그대로 재현한 미니 데모로 보여준다.
 const PROMO_TIERS = [
-  { img: "/iron-pawn.png", label: t("아이언 승급") },
-  { img: "/bronze-knight.png", label: t("브론즈 승급") },
-  { img: "/silver-bishop.png", label: t("실버 승급") },
-  { img: "/gold-rook.png", label: t("골드 승급") },
+  { img: "/iron-pawn.webp", label: t("아이언 승급") },
+  { img: "/bronze-knight.webp", label: t("브론즈 승급") },
+  { img: "/silver-bishop.webp", label: t("실버 승급") },
+  { img: "/gold-rook.webp", label: t("골드 승급") },
 ];
 // v0.1.1에서 새로 생긴 "티어가 오르면 화면이 바뀌며 승급하는" 연출을, 실제 사이트에서 쓰는 것과
 // 같은 시각 언어(GOLD_DISC)로 축소 재현한다 — 일정 간격으로 다음 티어로 자동 순환.
@@ -3555,6 +3629,7 @@ const PAGES_META = [{ key: "intro", label: t("사이트 소개"), Icon: Compass 
 const LATEST_VERSION = VERSION_HISTORY[0].version;
 
 export default function AboutPage() {
+  usePageTitle(t("소개"));
   usePerfLite(); // 가벼운 모드로 바뀌면 다시 그려 무한 반복 모션을 멈춘다
   // 공지 모달의 "자세히 보기"(?page=2)나 #history로 들어오면 버전 기록 페이지부터 보여준다.
   const initialPage = useMemo(() => {
@@ -3609,7 +3684,7 @@ export default function AboutPage() {
       <AmbientLayer rich />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
-          <img className="ab-glitch" src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <img className="ab-glitch" src="/OpenChessLogo.webp" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
           <a href="/" className="press ab-sheen ab-glint" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 2, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
         </div>

@@ -1,6 +1,8 @@
 node_modules
 dist
 public/engine
+# (v0.8.0) 마스터 대국 DB 조각 — data/master-games.json에서 빌드 때 만든다(scripts/build-master-shards.mjs)
+public/master
 .DS_Store
 *.local
 .vite

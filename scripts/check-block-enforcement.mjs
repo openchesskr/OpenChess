@@ -37,6 +37,6 @@ if (!/<ProfileMoreMenu\b[\s\S]{0,900}setReportOpen\(true\)[\s\S]{0,400}setBlocke
   if (!/<BlockListPage /.test(set) || !/onOpenBlockWindow/.test(set)) fails.push("차단 목록 더보기: 모바일 전체 화면(BlockListPage)·데스크톱 창(onOpenBlockWindow) 연결이 없음");
   if (!/w\.type === "blocklist" \? <BlockListDocked myUid=\{uid\} \/>/.test(root) || !/dock\.open\(\{ id: "blocklist", type: "blocklist" \}\)/.test(root)) fails.push("App 도킹 창에 차단 목록(blocklist)이 없음");
   if (!/chatBlockSet\(myUid, uid, false\)/.test(bl)) fails.push("차단 목록에서 차단 해제가 안 됨");
-  if (/" \/ Language"/.test(set) || /t\("선택하면 페이지가 새로고침됨"\)/.test(set) || /Stockfish 19 Lite, depth 15로 고정/.test(set) || /번역 서비스\(Google Gemini\)로 전송됨/.test(set)) fails.push("설정 탭에 삭제한 설명 문구가 남아 있음"); }
+  if (/" \/ Language"/.test(set) || /t\("선택하면 페이지가 새로고침됨"\)/.test(set) || /Stockfish 18 Lite, depth 15로 고정/.test(set) || /번역 서비스\(Google Gemini\)로 전송됨/.test(set)) fails.push("설정 탭에 삭제한 설명 문구가 남아 있음"); }
 if (fails.length) { console.error("check-block-enforcement 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-block-enforcement: 연락 경로 4곳 + 친구 추천이 차단을 서버에서 강제, 프로필 신고·차단과 차단 목록 UI 있음");

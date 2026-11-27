@@ -12,7 +12,22 @@ import { TIER_COLORS } from "../lib/tierSystem.js";
    최상위 App에서 한 번만 Provider로 감싼다. */
 export const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic", pieceTypes: "PNBRQK" });
 
-export function PieceGlyph({ type, color, size, style, draggable = false, onDragStart, pieceSkin }) {
+// (v0.8.0 렉 수정) 기물 그림은 종류·색·크기·스킨·style 값이 같으면 다시 그리지 않는다 — 분석 탭이 엔진 갱신으로 다시 그려질 때마다
+//  보드 기물 32개(SVG·면 분할)가 전부 새로 그려지던 비용을 없앤다. style은 매번 새 객체로 넘어오므로 안쪽 값을 얕게 비교한다.
+//  SkinContext가 바뀌면(스킨 교체) memo와 무관하게 다시 그려진다.
+function sameStyle(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (a[k] !== b[k]) return false;
+  return true;
+}
+function samePieceProps(a, b) {
+  return a.type === b.type && a.color === b.color && a.size === b.size && a.draggable === b.draggable && a.onDragStart === b.onDragStart && a.pieceSkin === b.pieceSkin && sameStyle(a.style, b.style);
+}
+export const PieceGlyph = React.memo(PieceGlyphView, samePieceProps);
+function PieceGlyphView({ type, color, size, style, draggable = false, onDragStart, pieceSkin }) {
   // (버그 수정) 진짜 인터랙티브 보드가 아닌 곳(애니메이션 시연, 캡처 기물 목록, 프로모션 후보,
   // 티어 배지 등)에서 draggable을 아예 안 넘기면 undefined가 되어 <img>·<a>처럼 브라우저가
   // 기본적으로 드래그 가능하게 두는 요소는 여전히 네이티브 드래그가 걸려 있었다 — 실제 보드에서

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.6.6) PGN Mentor 파일이 없는 대회(올림피아드·FIDE 그랜드 스위스·월드컵 …)의 회차 데이터를 마스터 대국 DB(public/master-games.json)에서 만든다.
+/** (v0.6.6) PGN Mentor 파일이 없는 대회(올림피아드·FIDE 그랜드 스위스·월드컵 …)의 회차 데이터를 마스터 대국 DB(data/master-games.json)에서 만든다.
  *  예전엔 이런 대회의 연도 블록을 누르면 출전자 이름만 적힌 "대진표" 상자가 열려, 대국 하나 볼 수 없었다(BUG-082).
  *  출력: src/data/tournaments/<대회id>.json — build-pgn-tournaments.mjs의 결과와 같은 형식이라 도감의 회차 화면(EditionView)이 그대로 연다.
  *   · DB에는 실제 대회의 일부 대국만 있어(partial: 1) 순위·점수는 "DB 수록 대국 기준"이고 우승자는 판정하지 않는다. 대국 목록은 모두 열 수 있다.
@@ -15,7 +15,7 @@ import { encodeMoves } from "../src/lib/moveCodec.js";
 import { TOURNAMENTS } from "../src/data/chessTournaments.js";
 
 const ROOT = new URL("../", import.meta.url).pathname;
-const db = JSON.parse(readFileSync(join(ROOT, "public/master-games.json"), "utf8")).games;
+const db = JSON.parse(readFileSync(join(ROOT, "data/master-games.json"), "utf8")).games;
 const idx = JSON.parse(readFileSync(join(ROOT, "src/data/tournamentIndex.json"), "utf8"));
 const yearOf = (g) => (g.date && /^\d{4}/.test(g.date) ? parseInt(g.date.slice(0, 4), 10) : null);
 const resCode = (r) => (r === "1-0" ? 2 : r === "0-1" ? 0 : r === "1/2-1/2" ? 1 : -1);

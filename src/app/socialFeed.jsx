@@ -27,7 +27,8 @@ import { t, fmtDateOnly } from "../lib/i18n.js";
 const PAGE = 10;
 const INK = "#2A1B0E", SOFT = "#7A6648", LINE = "#D6C29A";
 const THEME_LABEL = () => Object.fromEntries(PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]));   // (v0.7.7) 테마 목록 공용
-const fmtDate = (ms) => (ms ? fmtDateOnly(ms, { year: "numeric", month: "2-digit", day: "2-digit" }) : "");
+// (v0.8.0, 사용자 요청) 날짜 뒤 "." 없이 — 한국어 등 로캘이 붙이는 끝 마침표(2026. 11. 27.)를 뗀다
+const fmtDate = (ms) => (ms ? fmtDateOnly(ms, { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\.\s*$/, "") : "");
 // (v0.7.9, 사용자 요청) 생성자 정보가 없는 게시물의 생성자는 openchesskr, 날짜 정보가 없는 게시물의 날짜는 오늘 — 서버 데이터는 supabase-setup.sql 백필·
 // 앱의 stampMissingSavedAt이 채우고, 그래도 비어 있으면(서버에 안 올라간 퍼즐·옛 응답) 화면에서 같은 값으로 보인다.
 export const DEFAULT_CREATOR = "openchesskr";
@@ -155,9 +156,9 @@ function PostHead({ username, photo, kindLabel, detail, right, onOpenProfile, me
   return (
     <>
       <button type="button" onClick={() => username && onOpenProfile && onOpenProfile(username)} disabled={!username} aria-label={username ? t("{0} 프로필", username) : undefined} className="press" style={{ background: "none", border: "none", padding: 0, cursor: username ? "pointer" : "default", display: "inline-flex" }}><Avatar name={name} photo={photo} /></button>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <button type="button" onClick={() => username && onOpenProfile && onOpenProfile(username)} disabled={!username} className="press" style={{ display: "block", maxWidth: "100%", background: "none", border: "none", padding: 0, textAlign: "left", cursor: username ? "pointer" : "default", fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: SITE_FONT }}>{name}</button>
-        <div style={{ fontSize: 11, color: SOFT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kindLabel}{detail ? " · " + detail : ""}</div>
+      <div style={{ minWidth: 0, flex: 1, height: 34, display: "flex", alignItems: "center" }}>
+        <button type="button" onClick={() => username && onOpenProfile && onOpenProfile(username)} disabled={!username} className="press" style={{ display: "block", maxWidth: "100%", lineHeight: 1.2, background: "none", border: "none", padding: 0, textAlign: "left", cursor: username ? "pointer" : "default", fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: SITE_FONT }}>{name}</button>
+        {/* (v0.8.0, 사용자 요청) 아이디 아래 줄("퍼즐 · 오프닝" 등)은 없앴다 — 아이디가 프로필 사진과 같은 높이 가운데에 온다 */}
       </div>
       <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center" }}>{right}</span>
       {menu}
@@ -245,7 +246,8 @@ function KwBox({ label, color = SOFT, title }) {
 }
 // 게시물 미디어 칸 — 보드를 칸 폭의 POST_BOARD_FRAC로 줄여 가운데에, 칸은 PUZZLE_MEDIA_RATIO(위아래로 조금 길게). bg·backdrop: 보드 뒤 배경
 // (v0.7.9, 사용자 요청 "보드 크기를 75% 정도 키울 것") 0.6 → 0.8 — 면적 1.78배. 폭 1.75배(1.05)는 칸을 넘어, 면적 기준으로 키우고 둘레에 종류별 배경 효과가 보일 여백을 남긴다.
-const POST_BOARD_FRAC = 0.8;
+// (v0.8.0, 사용자 요청 "보드를 더 키울 것") 0.8 → 0.9
+const POST_BOARD_FRAC = 0.9;
 function PostMedia({ bg, backdrop, children }) {
   return (
     <div style={{ position: "relative", width: "100%", aspectRatio: PUZZLE_MEDIA_RATIO, background: bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>

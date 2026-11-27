@@ -51,17 +51,19 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   const pz = fsR("src/app/puzzle.jsx"), feed = fsR("src/app/socialFeed.jsx"), pc = fsR("src/app/postComposer.jsx"), bd = fsR("src/components/postBackdrops.jsx");
   ok(/\{t\("\{0\}일", n\)\}/.test(pc), "연속 출석 숫자 뒤에 \"일\"이 없음");
   const hdr = (pz.match(/const headerNode = \([\s\S]*?\n  \);/) || [""])[0];
-  ok(/<StreakCount [^\n]*\n\s*<NewPostButton [\s\S]*\{searchBarNode\}/.test(hdr), "1줄 연속 출석(왼쪽)·새 게시물(오른쪽), 2줄 검색창·필터 배치가 아님");
+  ok(/<StreakCount [^\n]*\n\s*<NewPostButton /.test(hdr) && !/searchBarNode/.test(hdr), "머리줄이 연속 출석(왼쪽)·새 게시물(오른쪽)이 아님");
+  // (v0.8.0, 사용자 요청) 검색창·필터는 일일 퍼즐 캐러셀 아래(데스크톱·모바일 모두)
+  ok(/\{storiesNode\}\s*\{searchRowNode\}/.test(pz) && /\{headerNode\}\{storiesNode\}\{searchRowNode\}/.test(pz) && /const searchRowNode = [^\n]*\{searchBarNode\}/.test(pz), "검색창·필터가 일일 퍼즐 캐러셀 바로 아래에 있지 않음");
   ok(pz.indexOf("const searchBarNode = (") > 0 && pz.indexOf("const searchBarNode = (") < pz.indexOf("const headerNode = ("), "headerNode가 searchBarNode보다 먼저 만들어짐(정의 전 참조)");
-  ok(/placeholder=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz) && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
+  ok(/aria-label=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz)   /* (v0.8.0, BUG-204) 화면 안내(placeholder)는 짧게, 전체 설명은 aria-label */ && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
   ok(/const numInput = useMemo\(\(\) => \{ const q = searchQuery\.trim\(\)/.test(pz) && /if \(e\.key === "Enter" && numInput\) solveByInput\(\)/.test(pz), "검색어가 번호·날짜면 번호로 풀기로 동작해야 함");
   ok(/gridTemplateColumns: "minmax\(0, 1fr\) minmax\(0, 1fr\)"[^}]*width: "calc\(100vw - 32px\)"/.test(pz), "데스크톱 소셜 탭이 뷰포트 절반으로 나뉘지 않음");
   ok(/date=\{createdAt === undefined \? "" : dateOrToday\(createdAt\)\} keywords=\{keywords\}/.test(feed) && /date=\{dateOrToday\(post\.savedAt\)\}/.test(feed) && /<KwBox key=/.test(feed), "게시물 좌하단 날짜(없으면 오늘, v0.7.9) + 키워드 박스가 없음");
   ok(!/>#\{labels\[k\] \|\| k\}</.test(feed), "퍼즐 테마를 # 대신 박스로 표기해야 함");
-  ok(/const POST_BOARD_FRAC = 0\.8;/.test(feed) && /aspectRatio: PUZZLE_MEDIA_RATIO/.test(feed), "게시물 보드 크기(v0.7.9 사용자 요청: 0.6 → 0.8, 면적 약 1.75배)·세로로 긴 미디어 칸이 없음");
+  ok(/const POST_BOARD_FRAC = 0\.9;/.test(feed) && /aspectRatio: PUZZLE_MEDIA_RATIO/.test(feed), "게시물 보드 크기(v0.7.9: 0.6 → 0.8, v0.8.0: 0.9)·세로로 긴 미디어 칸이 없음");
   // (v0.7.9, 사용자 요청) 퍼즐 테마별 효과 제거 — 배경·효과는 게시물 종류(퍼즐·유산·대국)별로 하나씩
   ok(!/PuzzleThemeBackdrop|puzzleBackdropTheme/.test(feed) && /<PuzzlePostBackdrop \/>/.test(feed) && /isGame \? <GamePostBackdrop \/> : <LegacyPostBackdrop /.test(feed)
-    && ["PuzzlePostBackdrop", "LegacyPostBackdrop", "GamePostBackdrop"].every((f) => bd.includes("export function " + f + "(")) && /CONSTELLATIONS/.test(bd) && /function Bracket\(/.test(bd), "게시물 배경이 퍼즐·유산(별자리·브래킷)·대국별로 나뉘지 않음");
+    && ["PuzzlePostBackdrop", "LegacyPostBackdrop", "GamePostBackdrop"].every((f) => bd.includes("export function " + f + "(")) && /CONSTELLATIONS/.test(bd) && /function ElectricArc\(/.test(bd) && !/function Bracket\(/.test(bd) && !/FacetDiamond/.test(bd), "게시물 배경이 퍼즐·유산(별자리·전류, v0.8.0)·대국별로 나뉘지 않음(퍼즐 마름모·유산 코너 브래킷은 없앰)");
   ok(/creator = creator \|\| DEFAULT_CREATOR;/.test(feed) && /ownerInfo\.username \|\| DEFAULT_CREATOR/.test(feed) && /export const DEFAULT_CREATOR = "openchesskr";/.test(feed), "생성자 정보가 없는 게시물은 openchesskr로 보여야 함(v0.7.9)");
   ok(/<TierOctFrame tierKey=\{tier\.key\}/.test(pz) && /const octClip = /.test(pz) && /<TierBackdrop tierKey=\{tierKey\} on narrow=\{false\} compact \/>/.test(pz), "퍼즐 티어 박스가 팔각형 + 티어 여정 디자인(TierOctFrame·TierBackdrop)이 아님"); }
 // (v0.7.8, 사용자 요청 2차) 게시물 ⋮ 메뉴(남: 신고·관심 없음 / 나: 삭제), 재생·풀기 버튼 제거, 오른쪽 영역(모바일 2페이지)·리더보드·친구 퍼즐 현황
@@ -72,7 +74,10 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   ok(/filter\(\(it\) => !isHiddenPost\(it\.key\)/.test(feed) && /hidePost\(postKey\)/.test(feed), "관심 없음으로 숨긴 게시물을 피드에서 빼지 않음");
   ok(/<SwipePager pages=\{\[\s*\{ key: "feed"[\s\S]*\{ key: "side", node: <div style=\{\{ minWidth: 0 \}\}>\{sideNode\}/.test(pz), "모바일 오른쪽 영역이 옆으로 넘기는 2페이지가 아님");
   ok(/const sideNode = \(\s*<>\s*\{tierNode\}\s*<PuzzleSidePanels /.test(pz), "오른쪽 영역에 티어 박스 아래 리더보드·친구 현황이 없음");
-  ok(/useRpcRows\("leaderboard_top"/.test(side) && /useRpcRows\("puzzle_rating_leaderboard"/.test(side) && /function FriendsPuzzle\(/.test(side), "퍼즐 XP·레이팅 리더보드·친구 퍼즐 현황이 없음");
+  ok(/sbRpc\("leaderboard_top"/.test(side) && /sbRpc\("puzzle_rating_leaderboard"/.test(side) && /function FriendsPuzzle\(/.test(side), "퍼즐 XP·레이팅 리더보드·친구 퍼즐 현황이 없음");
+  // (v0.8.0, 사용자 요청) 리더보드는 블록 하나에 종목별 좌우 넘김(일반 대국·미니게임 4종·퍼즐 XP·퍼즐 레이팅·칭호) + 전체/친구 토글, 이름은 "퍼즐 XP"처럼
+  ok(/function Leaderboards\(/.test(side) && /scrollSnapType: "x mandatory"/.test(side) && ["chess", "coord", "knight", "attack", "rush", "xp", "rating", "titles"].every((k) => side.includes('{ key: "' + k + '"'))
+    && /sbRpc\("minigame_leaderboard", \{[^}]*p_scope: scope/.test(side) && /\["friends", t\("친구"\)\]/.test(side) && !/리더보드"\)/.test(side.replace('t("리더보드")', "")), "리더보드가 한 블록 좌우 넘김 + 전체/친구 토글(종목명만 표기)이 아님");
   ok(/create or replace function public\.puzzle_rating_leaderboard\(/.test(sql) && /'puzzle_rating_leaderboard'/.test(sql), "퍼즐 레이팅 리더보드 RPC(또는 권한 목록)가 없음"); }
 if (fails.length) { console.error("✗ check-social-feed 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-social-feed: 소셜 탭(/social) 피드 섞기·종류 토글·유산 피드 RPC 유지");

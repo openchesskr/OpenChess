@@ -1,4 +1,4 @@
-import React, { useRef, useState, useLayoutEffect, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 import { t } from "../lib/i18n.js";
@@ -24,6 +24,17 @@ export const KW = {
   "FLEXIBLE": { bg: "#F3E8C6", fg: "#8A6A18", desc: t("여러 플랜을 남겨두는 유연한 수") },
   "OPEN": { bg: "#FBE3CE", fg: "#A85A1E", desc: t("개방적인 포지션을 지향") },
   "CLOSED": { bg: "#D7DEE8", fg: "#3E4C66", desc: t("폐쇄적인 포지션을 지향") },
+  // (v0.8.0, 사용자 요청) 포지션 성격 키워드 — 평가·채택률과 무관하게 보드만 보고 붙는다(lib/moveKeywords.js 19~28)
+  "GAMBIT": { bg: "#F6D9C4", fg: "#94431A", desc: t("폰을 내주고 발전·주도권을 얻는 갬빗") },
+  "EARLY QUEEN": { bg: "#EED7E3", fg: "#86365F", desc: t("이른 퀸 출동. 상대 발전 수에 쫓기기 쉬움") },
+  "TEMPO LOSS": { bg: "#E7DCCF", fg: "#7A5634", desc: t("이미 나간 기물을 다시 움직여 발전이 늦어지는 수") },
+  "KING WALK": { bg: "#F0D6CF", fg: "#923B2A", desc: t("캐슬링 대신 킹이 직접 움직이는 수") },
+  "WEAKENING": { bg: "#EFDCD2", fg: "#8A4A33", desc: t("킹 앞 폰을 밀어 킹 주변 칸이 약해지는 수") },
+  "FIANCHETTO": { bg: "#D9E6DA", fg: "#355F3D", desc: t("비숍을 긴 대각선에 세우는 피앙케토") },
+  "PROPHYLAXIS": { bg: "#DDE3EF", fg: "#3A4D78", desc: t("상대 기물이 들어올 칸을 미리 막는 예방 수") },
+  "WING": { bg: "#E4E0F0", fg: "#4D4382", desc: t("측면 폰으로 공간을 넓히거나 공격하는 수") },
+  "CENTER": { bg: "#F2E4C8", fg: "#7D5A17", desc: t("중앙 칸을 차지하거나 겨냥하는 수") },
+  "SPACE": { bg: "#D4E9EC", fg: "#245F69", desc: t("폰을 상대 진영으로 밀어 공간을 확보하는 수") },
 };
 // (사용자 요청) 수 키워드 칩(NORMAL/TOP LEVEL 등)을 누르면 그 뜻(KW[k].desc)을 보여주는 말풍선 —
 // 예전엔 브라우저 기본 title 호버 툴팁뿐이라 모바일에서는 사실상 볼 방법이 없었다.
@@ -99,16 +110,18 @@ export function KeywordScroll({ kws, chipStyle }) {
   const [overflow, setOverflow] = useState(false);
   const [period, setPeriod] = useState(0);   // 한 묶음 길이(px) — CSS 애니메이션이 이만큼 이동하면 제자리로 돌아온다
   const sig = kws.join(",");
-  useLayoutEffect(() => {
+  // (v0.8.0 렉 수정) 폭 재기는 ResizeObserver 알림 안에서만 한다(브라우저가 레이아웃을 마친 뒤라 강제 레이아웃이 없다).
+  //  예전엔 키워드가 바뀔 때마다 layout effect에서 offsetWidth를 바로 읽어, 분석 탭이 그려지는 도중 레이아웃을 한 번 더 강제로 계산했다.
+  //  묶음(one)도 함께 관찰해 키워드 글자 폭이 바뀌면 다시 잰다. 알림은 그리기 전에 오므로 깜빡임은 없다.
+  useEffect(() => {
     const el = ref.current, one = setRef.current;
-    if (!el || !one) return;
+    if (!el || !one) return undefined;
     const check = () => { const w = one.offsetWidth; setOverflow(w > el.clientWidth + 1); setPeriod(w + KW_GAP); };
-    check();
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof ResizeObserver === "undefined") { check(); return undefined; }
     const ro = new ResizeObserver(check);
-    ro.observe(el);
+    ro.observe(el); ro.observe(one);
     return () => ro.disconnect();
-  }, [sig]);
+  }, [sig, kws.length > 0]);
   if (!kws.length) return null;
   const set = (key, extra) => (
     <div key={key} ref={key === "a" ? setRef : null} aria-hidden={extra ? "true" : undefined} style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, flexShrink: 0 }}>
@@ -132,12 +145,12 @@ export function MarqueeText({ children, height = 18, style }) {
   const ref = useRef(null), oneRef = useRef(null);
   const [over, setOver] = useState(false), [period, setPeriod] = useState(0);
   const sig = typeof children === "string" ? children : "";
-  useLayoutEffect(() => {
+  // (v0.8.0 렉 수정) KeywordScroll과 같이 폭 재기는 ResizeObserver 알림 안에서만(강제 레이아웃 없음). 글 묶음(one)도 관찰해 글이 바뀌면 다시 잰다.
+  useEffect(() => {
     const el = ref.current, one = oneRef.current; if (!el || !one) return undefined;
     const check = () => { const w = one.offsetWidth; setOver(w > el.clientWidth + 1); setPeriod(w + MARQUEE_GAP); };
-    check();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(check); ro.observe(el);
+    if (typeof ResizeObserver === "undefined") { check(); return undefined; }
+    const ro = new ResizeObserver(check); ro.observe(el); ro.observe(one);
     return () => ro.disconnect();
   }, [sig]);
   return (

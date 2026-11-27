@@ -1,11 +1,11 @@
 // (v0.6.0, App.jsx 분할) 'play' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetCrosshair, FacetDiamond, facetRamp } from "../components/facetIcons.jsx";
-import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
+import { sanSrc, legalDests, plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { DailyQuestCard, PlayQuestCard } from "./dailyQuest.jsx";
 import { SwipePager } from "../components/swipePager.jsx";
 import { emitPlayEvent } from "../lib/playQuest.js";
-import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
+import { ownPriorMoveWasSacrifice, isSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
 import { loadLastGameQuality, playSfx, saveLastGameQuality, playMoveSfx } from "../lib/prefs.js";
@@ -33,6 +33,10 @@ import { Mascot, Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_C
 
 import { t, tx } from "../lib/i18n.js";
 import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
+import { ModeHero } from "../components/modeHero.jsx";   // (v0.8.0) 모드 소개 박스
+import { BotTierButton } from "../components/botTierButton.jsx";   // (v0.8.0) 봇 수준 버튼
+import { DeckmateAnim } from "../components/deckmateAnim.jsx";   // (v0.8.0) 데크메이트 블록 애니메이션
+import { OffscreenPause } from "../components/offscreenPause.jsx";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 AnalysisTab/리뷰의 grade)과 같은
 // 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
 // 짧게 잡고, 둔 수가 체크메이트면 둔 뒤 평가는 생략한다(엔진은 메이트 포지션에 수를 내지 못한다).
@@ -99,7 +103,9 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
 }
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"]; // 구분 값(한국어 고정). 화면에는 tcCatLabel로 번역해 표시
 // (v0.7.1 디자인) 봇 강도별 색 — 앱의 티어 색(아이언~그랜드마스터)을 그대로 빌려 강해질수록 색이 달라지게 한다.
-const PLAY_BOT_TIER_KEY = { 400: "iron", 800: "bronze", 1200: "silver", 1600: "gold", 2000: "diamond", 2400: "master", 2800: "grandmaster" };
+const PLAY_BOT_TIER_KEY = { 400: "iron", 800: "bronze", 1200: "silver", 1600: "gold", 2000: "diamond", 2400: "master", 2700: "grandmaster" };
+// (v0.8.0, 사용자 요청) 그랜드마스터 봇 2800 → 2700, 코치 봇 두 명 추가 — KOKOA(미하일 탈 최고 레이팅 2705)·MILKU(바비 피셔 최고 레이팅 2785).
+//  style: 수 고르기 성향(pickBotMove) + 오프닝 레퍼토리(BOT_BOOKS). coach: 프로필 사진에 코치 그림.
 const PLAY_BOT_TIERS = [
   { elo: 400, label: "400", desc: t("체스를 막 배운 친구") },
   { elo: 800, label: "800", desc: t("초보") },
@@ -107,8 +113,56 @@ const PLAY_BOT_TIERS = [
   { elo: 1600, label: "1600", desc: t("클럽 플레이어") },
   { elo: 2000, label: "2000", desc: t("상급자") },
   { elo: 2400, label: "2400", desc: t("마스터") },
-  { elo: 2800, label: "2800", desc: t("그랜드마스터") },
+  { elo: 2700, label: "2700", desc: t("그랜드마스터") },
+  { elo: 2705, label: "KOKOA", desc: t("미하일 탈의 기풍. 희생과 복잡하고 어려운 포지션을 즐깁니다"), style: "tal", coach: "kokoa" },
+  { elo: 2785, label: "MILKU", desc: t("바비 피셔의 기풍. 정확한 수로 간결하고 확실한 우세를 만듭니다"), style: "fischer", coach: "milku" },
 ];
+// (v0.8.0) 코치 봇 오프닝 레퍼토리 — 실제 두 기사가 즐겨 둔 수순. [수순(SAN, 공백 구분), [[다음 수, 가중치], …]]. 레퍼토리 밖이면 엔진 + 성향.
+//  탈: 백 1.e4(오픈 시칠리안·루이 로페즈·프렌치 정면 공격), 흑 1.e4 c5·e5, 1.d4엔 모던 베노니·킹스 인디언.
+//  피셔: 백 1.e4 "best by test"(루이 로페즈 익스체인지·시칠리안 소진 공격 Bc4), 흑 1.e4 c5 나이도르프, 1.d4엔 킹스 인디언·그륀펠트.
+const BOT_BOOKS = {
+  tal: [
+    ["", [["e4", 1]]],
+    ["e4 c5", [["Nf3", 1]]], ["e4 c5 Nf3 d6", [["d4", 1]]], ["e4 c5 Nf3 Nc6", [["d4", 1]]], ["e4 c5 Nf3 e6", [["d4", 1]]],
+    ["e4 c5 Nf3 d6 d4 cxd4", [["Nxd4", 1]]], ["e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6", [["Nc3", 1]]], ["e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6", [["Bg5", 2], ["Bc4", 1]]],
+    ["e4 e5", [["Nf3", 1]]], ["e4 e5 Nf3 Nc6", [["Bb5", 3], ["d4", 1]]], ["e4 e6", [["d4", 1]]], ["e4 e6 d4 d5", [["Nc3", 2], ["Nd2", 1]]],
+    ["e4 c6", [["d4", 1]]], ["e4 c6 d4 d5", [["Nc3", 1]]], ["e4 d5", [["exd5", 1]]],
+    ["e4", [["c5", 3], ["e5", 2]]], ["e4 e5 Nf3", [["Nc6", 1]]], ["e4 c5 Nf3", [["d6", 2], ["Nc6", 1]]],
+    ["d4", [["Nf6", 1]]], ["d4 Nf6 c4", [["c5", 2], ["g6", 1]]], ["d4 Nf6 c4 c5 d5", [["e6", 1]]], ["d4 Nf6 c4 c5 d5 e6 Nc3", [["exd5", 1]]],
+    ["d4 Nf6 c4 g6 Nc3", [["Bg7", 1]]], ["c4", [["e5", 1]]], ["Nf3", [["Nf6", 1]]],
+  ],
+  fischer: [
+    ["", [["e4", 1]]],
+    ["e4 e5", [["Nf3", 1]]], ["e4 e5 Nf3 Nc6", [["Bb5", 1]]], ["e4 e5 Nf3 Nc6 Bb5 a6", [["Bxc6", 2], ["Ba4", 2]]],
+    ["e4 c5", [["Nf3", 1]]], ["e4 c5 Nf3 d6", [["d4", 1]]], ["e4 c5 Nf3 d6 d4 cxd4", [["Nxd4", 1]]], ["e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6", [["Nc3", 1]]],
+    ["e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6", [["Bc4", 2], ["Be3", 1]]], ["e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 Nc6", [["Bc4", 1]]],
+    ["e4 e6", [["d4", 1]]], ["e4 e6 d4 d5", [["Nc3", 1]]], ["e4 c6", [["Nc3", 1], ["d4", 1]]], ["e4 d6", [["d4", 1]]],
+    ["e4", [["c5", 1]]], ["e4 c5 Nf3", [["d6", 1]]], ["e4 c5 Nf3 d6 d4", [["cxd4", 1]]], ["e4 c5 Nf3 d6 d4 cxd4 Nxd4", [["Nf6", 1]]], ["e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3", [["a6", 1]]],
+    ["e4 e5 Nf3", [["Nc6", 1]]],
+    ["d4", [["Nf6", 1]]], ["d4 Nf6 c4", [["g6", 1]]], ["d4 Nf6 c4 g6 Nc3", [["Bg7", 2], ["d5", 1]]], ["d4 Nf6 c4 g6 Nc3 Bg7 e4", [["d6", 1]]],
+    ["c4", [["Nf6", 1]]], ["Nf3", [["Nf6", 1]]],
+  ],
+};
+const _botBookCache = {};
+function botBookAt(style, fen) {
+  if (!BOT_BOOKS[style]) return null;
+  if (!_botBookCache[style]) {
+    const m = new Map();
+    for (const [seq, moves] of BOT_BOOKS[style]) { try { const f = fenOfRoot(null, seq ? seq.split(" ") : []); m.set(f.split(" ").slice(0, 2).join(" "), moves); } catch { } }
+    _botBookCache[style] = m;
+  }
+  return _botBookCache[style].get(String(fen).split(" ").slice(0, 2).join(" ")) || null;
+}
+// SAN → UCI(레퍼토리 수를 엔진 형식으로). 합법 도착 칸까지 확인한다.
+function sanToUciAt(fen, san) {
+  try {
+    const pf = parseFenFull(fen); if (!pf) return null;
+    const info = sanSrc(pf.board, san, pf.turn); if (!info || info.castle) return info && info.castle ? (pf.turn === "w" ? (info.castle === "k" ? "e1g1" : "e1c1") : (info.castle === "k" ? "e8g8" : "e8c8")) : null;
+    if (!legalDests(pf.board, info.from[0], info.from[1], pf.turn, null).some(([r, c]) => r === info.to[0] && c === info.to[1])) return null;
+    const sq = ([r, c]) => "abcdefgh"[c] + (8 - r);
+    return sq(info.from) + sq(info.to);
+  } catch { return null; }
+}
 // (버그 수정, 사용자 제보) 2800 봇이 너무 나쁜 수를 자주 뒀다 — 예전엔 온도가 레이팅에 선형으로만
 // 줄어들어(elo 2800에서도 T=8), cp 손실이 30~40 정도인 후보도 꽤 자주 골라졌다. 400(T=220)~2800(T=5)
 // 사이를 지수적으로 보간해, 레이팅이 높아질수록 "약간 나쁜 수"를 급격히 덜 고르게 만든다(cp 손실이
@@ -127,19 +181,48 @@ function botSearchParams(elo) {
 // (사용자 요청) 봇도 응수하기까지 최소한의 "생각하는 시간"을 갖도록 — 엔진 탐색 자체가 이미 걸리는
 // 시간과 별개로, 레이팅이 높을수록 조금 더 오래 고민하는 것처럼 느껴지도록 하한을 둔다.
 function botThinkDelayMs(elo) {
-  return Math.round(600 + Math.max(0, Math.min(1, elo / 2800)) * 1600); // 600ms(400) ~ 2200ms(2800)
+  return Math.round(600 + Math.max(0, Math.min(1, elo / 2800)) * 1600); // 600ms(400) ~ 약 2200ms(2785)
 }
 // (버그 수정, 사용자 제보) 같은 포지션을 다시 만나면(반복 수순 등) 매번 똑같은 수만 고르는 경향이
 // 있었다 — moveMemory(이 대국 안에서 "이 FEN에서 이미 골랐던 수"를 세는 Map<fen, Map<uci, count>>)를
 // 받아, 이미 골랐던 적 있는 후보는 고를 때마다 가중치를 큰 폭으로 깎는다(전혀 못 고르게 막지는 않고,
 // 다른 대안이 없으면 여전히 고를 수 있다 — 외길 수순까지 막지 않기 위해서다).
-async function pickBotMove(engine, fen, elo, moveMemory) {
+async function pickBotMove(engine, fen, elo, moveMemory, style) {
+  // (v0.8.0) 코치 봇은 레퍼토리 안이면 그 기사가 즐겨 둔 수를 가중치대로 고른다
+  if (style) {
+    const book = botBookAt(style, fen);
+    if (book) {
+      const opts = book.map(([san, w]) => ({ uci: sanToUciAt(fen, san), w })).filter((o) => o.uci);
+      if (opts.length) { let r = Math.random() * opts.reduce((a, o) => a + o.w, 0); for (const o of opts) { r -= o.w; if (r <= 0) return o.uci; } return opts[0].uci; }
+    }
+  }
   const { depth, movetime } = botSearchParams(elo);
-  const lines = await engine.evaluateMulti(fen, depth, 5, movetime, undefined, undefined, "play-bot");
+  const lines = await engine.evaluateMulti(fen, depth, style ? 6 : 5, movetime, undefined, undefined, "play-bot");
   if (!lines || !lines.length) return null;
-  const scored = lines.map((l) => ({ uci: l.uci, cp: l.mate != null ? (l.mate > 0 ? 100000 - l.mate : -100000 - l.mate) : (l.cp || 0) }));
+  let scored = lines.map((l) => ({ uci: l.uci, cp: l.mate != null ? (l.mate > 0 ? 100000 - l.mate : -100000 - l.mate) : (l.cp || 0) }));
+  const rawBest = Math.max(...scored.map((s) => s.cp));
+  // (v0.8.0) 성향 — 엔진 평가에 기풍 보정을 더해 고른다(어디까지나 엔진이 받아들일 만한 수 안에서)
+  //  탈(tal): 희생 +70, 체크 +25, 잡기 +10, 퀸을 남기는 수(퀸 교환이 아님) +15 — 최선보다 1.2점 넘게 나쁜 수는 후보에서 뺀다.
+  //  피셔(fischer): 희생 −50, 우세(+1.0 이상)할 때 잡기(정리) +20, 최선 수 +15 — 온도를 낮춰 정확한 수를 더 자주 둔다.
+  if (style) {
+    const pf = (() => { try { return parseFenFull(fen); } catch { return null; } })();
+    scored = scored.filter((s) => rawBest - s.cp <= (style === "tal" ? 120 : 80)).map((s) => {
+      let bonus = 0;
+      try {
+        const san = pf ? uciToSan(pf.board, s.uci, pf.turn) : null;
+        if (san) {
+          const sac = isSacrifice(pf.board, san, pf.turn), check = /[+#]/.test(san), cap = /x/.test(san);
+          const tgt = pf.board[8 - Number(s.uci[3])] && pf.board[8 - Number(s.uci[3])]["abcdefgh".indexOf(s.uci[2])];
+          const queenTrade = /^Q/.test(san) && cap && tgt && tgt.t === "Q";
+          if (style === "tal") bonus += (sac ? 70 : 0) + (check ? 25 : 0) + (cap ? 10 : 0) + (queenTrade ? -30 : 15);
+          else bonus += (sac ? -50 : 0) + (cap && rawBest >= 100 ? 20 : 0) + (s.cp === rawBest ? 15 : 0);
+        }
+      } catch { }
+      return { ...s, cp: s.cp + bonus };
+    });
+  }
   const best = Math.max(...scored.map((s) => s.cp));
-  const T = botTemperature(elo);
+  const T = style === "fischer" ? botTemperature(elo) * 0.6 : botTemperature(elo);
   const usedHere = moveMemory ? moveMemory.get(fen) : null;
   const weights = scored.map((s) => {
     let w = Math.exp(-(best - s.cp) / T);
@@ -419,6 +502,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
   const avatar = (photo, initial, isBot, isWinner) => {
     const base = { width: 54, height: 54, borderRadius: 15, border: "2.5px solid " + ring(isWinner), boxShadow: isWinner ? "0 0 0 3px rgba(60,138,60,.18)" : "none" };
     if (photo) return <img src={photo} alt="" style={{ ...base, objectFit: "cover" }} />;
+    if (isBot && botTier && botTier.coach) return <span style={{ ...base, background: "#F7EEDC", overflow: "hidden", display: "inline-flex", alignItems: "flex-end", justifyContent: "center" }}><Mascot name={botTier.coach} emotion="great" size={50} /></span>;   // (v0.8.0) 코치 봇
     if (isBot) return <span style={{ ...base, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Cpu size={22} /></span>;
     return <span style={{ ...base, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{initial}</span>;
   };
@@ -704,13 +788,30 @@ const MG_DESKTOP_CSS = "@media (min-width:900px){"
   + ".mg-lobby{max-width:" + MG_LOBBY_MAX_W + "px!important;display:grid!important;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);column-gap:28px;align-items:start;padding-top:18px!important}"
   + ".mg-lobby-col{display:flex!important;flex-direction:column;gap:20px;min-width:0}"
   + ".mg-lobby-left{position:sticky;top:0}"
-  + ".mg-hero{flex-direction:column!important;align-items:flex-start!important;gap:18px!important;padding:26px 26px 28px!important;min-height:250px;justify-content:flex-end}"
-  + ".mg-hero .mg-hero-icon{width:72px!important;height:72px!important;border-radius:20px!important}"
-  + ".mg-hero .mg-hero-name{display:block!important}"
-  + ".mg-hero p{font-size:14px!important}"
   + ".oc-bot-grid{display:grid!important;grid-template-columns:1fr 1fr}"
   + "}";
+// (v0.8.0, 사용자 요청) 플레이 탭 모드 화면의 하위 주소 — openchess.kr/play/<식별자>. 화면을 열 때 주소를 쌓고(pushState), 브라우저 뒤로가기는
+//  열린 화면의 뒤로 버튼과 똑같이 처리한다(진행 중인 실시간 대전이면 그 화면의 기권 확인이 먼저 뜬다). 주소로 바로 들어오거나 앞으로 가기면 그 화면을 연다.
+//  데크메이트는 아직 열리는 화면이 없어 플레이 탭의 데크메이트 블록으로 스크롤한다.
+export const PLAY_SUB_OF = { standard: "standard", deckmate: "deckmate", "coord-race": "coordinatesgame", "knight-race": "knightrace", "attack-mode": "endlesscheckmate", "rush-hour": "backrankrushhour" };
+export const playSubFromPath = (p) => { const m = /^\/play\/([a-z]+)\/?$/.exec(p || ""); return m && Object.values(PLAY_SUB_OF).includes(m[1]) ? m[1] : null; };
+function pushPlaySub(sub) {
+  try { if (window.location.pathname !== "/play/" + sub) window.history.pushState({ ...(window.history.state || {}), play: true, playSub: sub }, "", "/play/" + sub); } catch { }
+}
+// 화면을 닫을 때 — 우리가 쌓은 주소면 한 칸 뒤로(히스토리를 늘리지 않음), 아니면(주소로 바로 들어옴) /play로 바꿔 둔다
+function popPlaySub(sub) {
+  try {
+    if (window.location.pathname !== "/play/" + sub) return;
+    if (window.history.state && window.history.state.playSub === sub && window.history.length > 1) window.history.back();
+    else window.history.replaceState({ ...(window.history.state || {}), playSub: null }, "", "/play");
+  } catch { }
+}
+// 뒤로가기 → 맨 위에 열린 MinigameScreen의 뒤로 버튼(onBack)
+const _mgScreenStack = [];
+export function playScreenBack() { const top = _mgScreenStack[_mgScreenStack.length - 1]; if (top) { top.current(); return true; } return false; }
 function MinigameScreen({ title, onBack, children, noScroll, headerRight }) {
+  const backRef = useRef(onBack); backRef.current = onBack;
+  useEffect(() => { const h = { current: () => backRef.current && backRef.current() }; _mgScreenStack.push(h); return () => { const i = _mgScreenStack.indexOf(h); if (i >= 0) _mgScreenStack.splice(i, 1); }; }, []);
   const wide = !useNarrow(MG_DESKTOP_BP);
   const maxW = !wide ? MG_DESKTOP_MAX_W : noScroll ? MG_PLAY_MAX_W : MG_LOBBY_MAX_W;   // (v0.7.9) 데스크톱은 2단이라 더 넓게
   return createPortal(
@@ -766,8 +867,13 @@ function useSquareFit(maxSize = 420, reserveH = 0) {
 // 미니게임 친구 도전장을 수락하면, App 루트가 이 prop으로 "이미 매칭된 대국"을 넘겨준다. gameType이
 // 가리키는 게임을 곧장 활성화하고 그 대국 객체를 initialGame으로 넘겨 매칭 화면 없이 바로 대전
 // 화면부터 보여준다 — 한 번 반영하면 onConsumeResume으로 App 루트에 소비했음을 알려 재적용을 막는다.
-function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRating, canEditContent, hubMaxWidth }) {
-  const [activeKey, setActiveKey] = useState(null);
+function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRating, canEditContent, hubMaxWidth, openRequest, onActiveChange }) {
+  // (v0.8.0) 처음 주소가 /play/<미니게임>이면 그 게임 화면으로 시작
+  const [activeKey, setActiveKeyRaw] = useState(() => { const sub = typeof window !== "undefined" ? playSubFromPath(window.location.pathname) : null; const k = Object.keys(PLAY_SUB_OF).find((x) => PLAY_SUB_OF[x] === sub); return k && PLAY_SPECIAL_GAMES.some((g) => g.key === k) ? k : null; });
+  const activeKeyRef = useRef(activeKey); activeKeyRef.current = activeKey;
+  const setActiveKey = (k) => { const prev = activeKeyRef.current; if (k && k !== prev) pushPlaySub(PLAY_SUB_OF[k]); if (!k && prev) popPlaySub(PLAY_SUB_OF[prev]); activeKeyRef.current = k; setActiveKeyRaw(k); };
+  useEffect(() => { if (onActiveChange) onActiveChange(activeKey); }, [activeKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (openRequest && openRequest.key) setActiveKeyRaw(openRequest.key); }, [openRequest]);
   const [resumeGame, setResumeGame] = useState(null);
   // (v0.5.4) 목록 카드마다 내 미니게임 레이팅을 보여준다 — 게임을 마치고 목록으로 돌아올 때 다시 읽는다.
   const [myStats, setMyStats] = useState({});
@@ -809,8 +915,8 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
 // 520px로 줄였다 — 좁은 화면(모바일·좁은 창)은 원래대로 화면 폭을 채운다(780 제한은 사실상 닿지 않는다).
 const PLAY_HUB_MAX_W = 780, PLAY_HUB_MAX_W_DESKTOP = 520;
 const GAME_SIDE_W = 340;   // (v0.7.9) 데스크톱 일반 대국 화면 오른쪽 패널 폭
-// (v0.7.9) 일반 대국 설정 화면의 소개 카드(미니게임 로비의 MinigameHero와 같은 틀)
-const NORMAL_GAME_SPEC = { Icon: Swords, accent: "#C49A50", name: t("일반 대국"), desc: t("실시간 상대 또는 봇과 한 판. 시간 분류별 레이팅 반영") };
+// (v0.7.9) 일반 대국 설정 화면의 소개 카드 — (v0.8.0) components/modeHero.jsx ModeHero(mode="standard")로 그린다
+const NORMAL_GAME_SPEC = { accent: "#C49A50", name: t("일반 대국") };   // (v0.8.0) 소개 박스는 이름만(설명은 ? 버튼)
 const MG_GAP = 1.8;                 // 도형 사이 간격
 const MG_PAD = 3;                   // 글자 여백
 const MG_RADIUS = 3.4;              // 모서리 라운딩
@@ -1219,47 +1325,23 @@ function MgMasterReplay({ cellPx, onGameChange }) {
   );
 }
 // (v0.7.8, 사용자 요청) "데크메이트" — 체스 기보 표기를 한 글자씩 잘라 카드 덱으로 만들고, 카드를 뽑아 조합한 기보로 수를 두는 체스 + 카드 게임(출시 예정).
-// 일반 대국 버튼과 같은 크림색 카드에, 왼쪽은 "N x f 7 +" 다섯 장이 부채꼴로 펼쳐져 Nxf7+를 이루는 카드 덱, 오른쪽은 오른쪽 정렬한 이름.
+// 일반 대국 버튼과 같은 크림색 카드에, 왼쪽은 반복 애니메이션(덱 카드 → Bxf7+ → 체스판 → 희생, v0.8.0), 오른쪽은 오른쪽 정렬한 이름.
 // 아직 플레이할 수 없어 어두운 반투명 막과 "출시 예정" 표시를 덮고 누를 수 없게 둔다. fill이면 칸 높이를 채운다(데스크톱에서 일일 퀘스트 블록과 아래 끝을 맞춤).
 // 카드는 아이콘 규칙대로 윤곽선 없이 면으로만 — 두께 면(가장 어두움) 위에 앞면을 왼쪽 위 밝은 면 / 오른쪽 아래 어두운 면으로 나누고, 맨 앞 카드에만 금빛 보석 하이라이트.
-const DECK_IVORY = facetRamp("#E9D8B4");
-const deckCardPts = (x, y, w, h, c) => [[x + c, y], [x + w - c, y], [x + w, y + c], [x + w, y + h - c], [x + w - c, y + h], [x + c, y + h], [x, y + h - c], [x, y + c]];
-const deckPath = (pts) => "M" + pts.map((p) => p[0].toFixed(2) + " " + p[1].toFixed(2)).join("L") + "Z";
-function DeckmateCard({ x, y, rot, label, front }) {
-  const w = 22, h = 31, c = 2.6, R = DECK_IVORY;
-  const face = deckCardPts(x, y, w, h, c);
-  // 앞면을 왼쪽 아래 → 오른쪽 위 대각선으로 나눈 두 면(왼쪽 위가 밝다)
-  const upper = [face[7], face[0], face[1], face[2], [x + w, y + h * 0.42], [x, y + h * 0.78], face[6]];
-  const lower = [[x, y + h * 0.78], [x + w, y + h * 0.42], face[3], face[4], face[5], face[6]];
-  return (
-    <g transform={"rotate(" + rot + " " + (x + w / 2) + " " + (y + h + 26) + ")"}>
-      <path d={deckPath(deckCardPts(x - 1.6, y + 0.6, w, h, c))} fill={R.l4} opacity={0.55} />
-      <path d={deckPath(deckCardPts(x + 1.1, y + 1.3, w, h, c))} fill={R.base} />
-      <path d={deckPath(upper)} fill={R.hi} />
-      <path d={deckPath(lower)} fill={R.l1} />
-      {/* 부채꼴로 겹치면 보이는 곳은 각 카드의 왼쪽 위 — 실제 카드처럼 큰 모서리 표기, 맨 앞 카드만 가운데에도 크게 */}
-      <text x={x + 3.4} y={y + 10.5} fontSize="9.5" fontWeight="900" fontFamily={SITE_FONT} fill="#3A2516">{label}</text>
-      {front && <text x={x + w / 2} y={y + h * 0.7} textAnchor="middle" fontSize="15" fontWeight="900" fontFamily={SITE_FONT} fill="#8A6322">{label}</text>}
-      {front && <FacetDiamond cx={x + w - 4} cy={y + 4.5} r={2.6} />}
-    </g>
-  );
-}
 function DeckmateButton({ fill = false }) {
-  const cards = [["N", -32], ["x", -16], ["f", 0], ["7", 16], ["+", 32]];
   return (
-    <div role="img" aria-label={t("데크메이트, 출시 예정")} style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", marginTop: 14, ...(fill ? { flex: 1, minHeight: 150 } : { aspectRatio: "1 / 0.42" }), border: "1px solid #DCCBA8", borderRadius: 14, overflow: "hidden", background: T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)" }}>
-      <span style={{ position: "relative", width: "48%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(120% 90% at 30% 20%, #F7EEDC 0%, #E7D6B2 70%, #D8C399 100%)" }}>
-        <svg viewBox="0 0 100 72" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-          {cards.map(([label, rot], i) => <DeckmateCard key={i} x={39} y={10} rot={rot} label={label} front={i === cards.length - 1} />)}
-        </svg>
-      </span>
+    <div role="img" data-deckmate="" aria-label={t("데크메이트, 출시 예정")} style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", marginTop: 14, ...(fill ? { flex: 1, minHeight: 150 } : { aspectRatio: "1 / 0.42" }), border: "1px solid #DCCBA8", borderRadius: 14, overflow: "hidden", background: T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)" }}>
+      {/* (v0.8.0, 사용자 요청) 덱 카드 → Bxf7+ → 암전 → 체스판 깔기 → Bxf7+ 희생이 계속 반복되는 애니메이션(components/deckmateAnim.jsx) */}
+      <OffscreenPause as="span" style={{ position: "relative", width: "48%", flexShrink: 0, display: "flex", background: "radial-gradient(120% 90% at 30% 20%, #F7EEDC 0%, #E7D6B2 70%, #D8C399 100%)" }}>
+        <DeckmateAnim />
+      </OffscreenPause>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: "1.6cqw", padding: "0 4.5cqw 0 3cqw", fontFamily: SITE_FONT, color: T.ink, textAlign: "right" }}>
         <span style={{ fontSize: "clamp(9px, 2.1cqw, 13px)", fontWeight: 800, letterSpacing: ".22em", color: "#8A6C2F" }}>DECKMATE</span>
         <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{t("데크메이트")}</span>
         <span style={{ fontSize: "clamp(10px, 2.4cqw, 15px)", fontWeight: 700, color: "rgba(90,58,34,.7)", lineHeight: 1.35, wordBreak: "keep-all" }}>{t("기보 카드를 뽑아 조합해 수를 두는 체스 카드 게임")}</span>
       </span>
-      {/* 출시 예정 — 어두운 반투명 막 */}
-      <span style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(24,14,7,.58)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {/* 출시 예정 — 어두운 반투명 막(왼쪽 애니메이션 쪽은 옅게). (v0.8.0) 배지는 오른쪽 아래 구석 — 가운데면 제목·설명(BUG-203)이나 애니메이션을 덮는다. */}
+      <span style={{ position: "absolute", inset: 0, zIndex: 3, background: "linear-gradient(90deg, rgba(24,14,7,.3) 0%, rgba(24,14,7,.3) 46%, rgba(24,14,7,.58) 52%)", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: "0 4.5cqw 4.5cqw 0" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, background: "rgba(20,12,6,.72)", border: "1px solid rgba(236,203,134,.55)", color: T.brassHi, fontSize: "clamp(13px, 3.4cqw, 20px)", fontWeight: 900, letterSpacing: ".04em", boxShadow: "0 6px 18px -6px rgba(0,0,0,.7)" }}>
           <Lock size={15} color={T.brassHi} />{t("출시 예정")}
         </span>
@@ -2388,28 +2470,9 @@ const MG_LOBBY_CSS = ".mg-row{transition:border-color .15s ease,background .15s 
 function MgLobbyLabel({ children }) {
   return <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.6)", letterSpacing: ".02em", margin: "0 2px 8px" }}>{children}</div>;
 }
-// (v0.7.1 디자인) 로비 맨 위 배너 — 네 게임이 똑같은 목록처럼 보이던 로비에 게임마다의 얼굴(고유 색·아이콘·한 줄 설명)을 준다.
-// 설명 문구는 플레이 탭 카드와 같은 PLAY_SPECIAL_GAMES의 desc를 그대로 쓴다(새 문구 없음).
-function MinigameHero({ spec }) {
-  if (!spec) return null;
-  const { Icon, accent, desc } = spec;   // name: 데스크톱 큰 소개 카드에만
-  return (
-    <div className="mg-hero" style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16,
-      background: "linear-gradient(135deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.38)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.08), 0 12px 26px -14px rgba(36,21,9,.75)" }}>
-      <span aria-hidden="true" style={{ position: "absolute", left: -34, top: -44, width: 150, height: 150, borderRadius: "50%", background: "radial-gradient(circle," + accent + "66 0%," + accent + "00 70%)", pointerEvents: "none" }} />
-      <span aria-hidden="true" style={{ position: "absolute", right: -14, bottom: -18, width: 128, height: 96, opacity: 0.1, pointerEvents: "none", transform: "rotate(-10deg)",
-        backgroundImage: "conic-gradient(#FFF6DE 25%, transparent 0 50%, #FFF6DE 0 75%, transparent 0)", backgroundSize: "32px 32px",
-        WebkitMaskImage: "linear-gradient(90deg, transparent, #000 70%)", maskImage: "linear-gradient(90deg, transparent, #000 70%)" }} />
-      <span className="mg-hero-icon" style={{ position: "relative", width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff",
-        background: "linear-gradient(150deg," + accent + "," + accent + "B3)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -6px " + accent }}><Icon size={24} strokeWidth={2.2} /></span>
-      <span style={{ position: "relative", minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-        {/* (v0.7.9) 데스크톱 로비 왼쪽 큰 소개 카드에서만 게임 이름을 크게(모바일은 화면 제목과 겹쳐 숨김) */}
-        <span className="mg-hero-name" style={{ display: "none", fontSize: 30, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.1, color: T.ivoryHi }}>{spec.name}</span>
-        <p style={{ margin: 0, minWidth: 0, wordBreak: "keep-all", fontSize: 12.5, fontWeight: 700, lineHeight: 1.55, color: "rgba(255,246,222,.88)" }}>{desc}</p>
-      </span>
-    </div>
-  );
-}
+// (v0.8.0, 사용자 요청) 로비 맨 위 소개 박스는 components/modeHero.jsx ModeHero — 설명 문구 없이 모드 이름과 모드마다 고유한 장면·아이콘.
+//  설명은 화면 오른쪽 위 ? 버튼(합니다체)으로만 본다.
+const MODE_OF_GAMETYPE = { coord: "coord", knight: "knight", attack: "attack", rush: "rush" };
 function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable, accent }) {
   return (
     <button onClick={onClick} disabled={disabled} className={"press mg-row" + (primary ? " primary" : "")} aria-expanded={expandable ? !!open : undefined}
@@ -2442,7 +2505,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
       <style>{MG_LOBBY_CSS}</style>
       {/* (v0.7.9) 데스크톱은 2단(mg-lobby-col) — 왼쪽: 게임 소개·내 기록, 오른쪽: 플레이 모드·친구. 모바일은 display: contents로 예전 세로 순서 그대로 */}
       <div className="mg-lobby-col mg-lobby-left" style={{ display: "contents" }}>
-      {spec && <motion.div {...mgRise(0)}><MinigameHero spec={spec} /></motion.div>}
+      {spec && <motion.div {...mgRise(0)}><ModeHero mode={MODE_OF_GAMETYPE[spec.gameType] || "standard"} name={spec.name} accent={spec.accent} big /></motion.div>}
       <motion.div {...mgRise(1)}>{statsBar}</motion.div>
       </div>
       <div className="mg-lobby-col" style={{ display: "contents" }}>
@@ -2866,9 +2929,9 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title={t("좌표 인지 게임")} gameType={COORD_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="coord_forfeit"
       rules={<>
-        <div>{tx("무작위 좌표가 뜨면 {0} 그 칸 클릭. 15라운드 동안 더 많이 맞힌 쪽 승리", <b style={{ color: T.ink }}>{t("상대보다 먼저")}</b>)}</div>
-        <div>{t("오답은 라운드가 끝나지 않음. 누군가 맞힐 때까지 계속")}</div>
-        <div>{tx("혼자 플레이는 {0}. 난이도 하(×1), 중(좌표 없음, ×2), 상(좌표 없음 + 흑 시점, ×3), 기록은 맞힌 개수 × 배율", <b style={{ color: T.ink }}>{t("30초 타임어택")}</b>)}</div>
+        <div>{tx("무작위 좌표가 뜨면 {0} 그 칸을 클릭합니다. 15라운드 동안 더 많이 맞힌 쪽이 이깁니다", <b style={{ color: T.ink }}>{t("상대보다 먼저")}</b>)}</div>
+        <div>{t("오답을 눌러도 라운드는 끝나지 않습니다. 누군가 맞힐 때까지 계속됩니다")}</div>
+        <div>{tx("혼자 플레이는 {0}입니다. 난이도는 하(×1), 중(좌표 없음, ×2), 상(좌표 없음 + 흑 시점, ×3)이고, 기록은 맞힌 개수에 배율을 곱합니다", <b style={{ color: T.ink }}>{t("30초 타임어택")}</b>)}</div>
       </>}
       soloSub={loadMinigameBest("coord") == null ? t("30초 타임어택, 난이도 3단계") : t("30초, 난이도 3단계, 최고 {0}점", loadMinigameBest("coord"))} botSub={t("15라운드")}
       renderPvp={(p) => <CoordRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -2881,11 +2944,11 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title={t("나이트 레이스")} gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>{tx("나이트로 목표 칸(★) 도달. {0}로 도착한 쪽이 라운드 승리, 같으면 {1} 도착한 쪽. 둘 다 못 가면 {2}, 거리도 같으면 {3} 승리. 제한시간은 10초에서 라운드마다 +2.5초, 7전 4선승", <b style={{ color: T.ink }}>{t("더 적은 수")}</b>, <b style={{ color: T.ink }}>{t("더 빨리")}</b>, <b style={{ color: T.ink }}>{t("목표에 더 가까운 쪽")}</b>, <b style={{ color: T.ink }}>{t("시간을 덜 쓴 쪽")}</b>)}</div>
-        <div>{tx("1·2라운드는 방해 기물 없음. {0}, 라운드마다 증가. 상대 기물 칸에 도달하면 그 기물을 잡음. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드 종료. 공격선은 실제 체스처럼 다른 기물에 막힘", <b style={{ color: T.ink }}>{t("3라운드부터 상대 기물 등장")}</b>)}</div>
-        <div>{tx("{0}. 가장 어려운 라운드", <b style={{ color: T.ink }}>{t("7라운드에는 상대 퀸 등장")}</b>)}</div>
-        <div>{tx("{0}. 잡힌 쪽은 라운드 종료", <b style={{ color: T.ink }}>{t("상대 나이트 칸으로 이동하면 상대 나이트를 잡음")}</b>)}</div>
-        <div>{tx("혼자 플레이는 7라운드를 모두 풀어 {0}으로 기록 도전", <b style={{ color: T.ink }}>{t("도달 횟수와 시간")}</b>)}</div>
+        <div>{tx("나이트로 목표 칸(★)에 도달합니다. {0}로 도착한 쪽이 라운드를 이기고, 같으면 {1} 도착한 쪽이 이깁니다. 둘 다 못 가면 {2}, 거리도 같으면 {3}이 이깁니다. 제한시간은 10초에서 라운드마다 2.5초씩 늘어나며 7전 4선승입니다", <b style={{ color: T.ink }}>{t("더 적은 수")}</b>, <b style={{ color: T.ink }}>{t("더 빨리")}</b>, <b style={{ color: T.ink }}>{t("목표에 더 가까운 쪽")}</b>, <b style={{ color: T.ink }}>{t("시간을 덜 쓴 쪽")}</b>)}</div>
+        <div>{tx("1·2라운드에는 방해 기물이 없습니다. {0}, 라운드마다 늘어납니다. 상대 기물 칸에 도달하면 그 기물을 잡습니다. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드가 끝납니다. 공격선은 실제 체스처럼 다른 기물에 막힙니다", <b style={{ color: T.ink }}>{t("3라운드부터 상대 기물이 등장하고")}</b>)}</div>
+        <div>{tx("{0}. 가장 어려운 라운드입니다", <b style={{ color: T.ink }}>{t("7라운드에는 상대 퀸이 등장합니다")}</b>)}</div>
+        <div>{tx("{0}. 잡힌 쪽은 라운드가 끝납니다", <b style={{ color: T.ink }}>{t("상대 나이트 칸으로 이동하면 상대 나이트를 잡습니다")}</b>)}</div>
+        <div>{tx("혼자 플레이는 7라운드를 모두 풀어 {0}으로 기록에 도전합니다", <b style={{ color: T.ink }}>{t("도달 횟수와 시간")}</b>)}</div>
       </>}
       soloSub={best ? t("7라운드, 최고 {0}회", best.reached) : t("7라운드 기록 도전")} botSub={t("7전 4선승")}
       renderPvp={(p) => <KnightRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -3816,10 +3879,10 @@ function RushToolbar({ p }) {
 function RushRules({ compact }) {
   return (
     <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: compact ? 0 : "10px 12px", borderRadius: 10, background: compact ? "transparent" : "rgba(255,255,255,.45)", border: compact ? "none" : "1px solid rgba(150,112,58,.33)" }}>
-      <div>{tx("{0}을 빼내 상대 백랭크(맨 윗줄)에서 킹 메이트", <b style={{ color: MG_GOLD }}>{t("왕관 표시 룩")}</b>)}</div>
-      <div>{tx("다른 기물은 실제 체스 규칙대로 이동. 길을 비켜 주거나 {0}으로 상대 기물 유인 가능", <b style={{ color: T.ink }}>{t("희생")}</b>)}</div>
-      <div>{tx("상대 기물은 정지 상태. {0}이 공격 범위에 들어오면 잡으러 옴", <b style={{ color: T.ink }}>{t("방금 움직인 내 기물")}</b>)}</div>
-      <div>{tx("주인공 룩이 {0}에 들어가면 즉시 잡혀 라운드 종료 (혼자 풀기는 실패, 다시 풀기). 적은 수로 풀수록 별 증가", <b style={{ color: "#F4B2A6" }}>{t("상대 기물이 지배하는 칸")}</b>)}</div>
+      <div>{tx("{0}을 빼내 상대 백랭크(맨 윗줄)에서 킹을 메이트합니다", <b style={{ color: MG_GOLD }}>{t("왕관 표시 룩")}</b>)}</div>
+      <div>{tx("다른 기물은 실제 체스 규칙대로 움직입니다. 길을 비켜 주거나 {0}으로 상대 기물을 유인할 수 있습니다", <b style={{ color: T.ink }}>{t("희생")}</b>)}</div>
+      <div>{tx("상대 기물은 멈춰 있습니다. {0}이 공격 범위에 들어오면 잡으러 옵니다", <b style={{ color: T.ink }}>{t("방금 움직인 내 기물")}</b>)}</div>
+      <div>{tx("주인공 룩이 {0}에 들어가면 바로 잡혀 라운드가 끝납니다(혼자 풀기는 실패로 다시 풉니다). 적은 수로 풀수록 별이 늘어납니다", <b style={{ color: "#F4B2A6" }}>{t("상대 기물이 지배하는 칸")}</b>)}</div>
     </div>
   );
 }
@@ -4840,10 +4903,10 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
   return (
     <MinigameHub title={t("무한 체크메이트 게임")} gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
       rules={<>
-        <div>{tx("{0} 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어짐. 더 많이 성공시킨 쪽 승리", <b style={{ color: T.ink }}>{t("3분")}</b>)}</div>
-        <div>{t("한 수라도 틀리면 그 기회는 실패, 바로 다음 기회로 이동")}</div>
-        <div>{tx("짧은 메이트일수록 좋은 등급. {0}이 좋은 등급을 받을 확률이 높음", <b style={{ color: T.ink }}>{t("퍼즐 레이팅이 낮은 쪽")}</b>)}</div>
-        <div>{t("동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교, 그래도 같으면 레이팅이 높은 쪽 승리")}</div>
+        <div>{tx("{0} 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어집니다. 더 많이 성공시킨 쪽이 이깁니다", <b style={{ color: T.ink }}>{t("3분")}</b>)}</div>
+        <div>{t("한 수라도 틀리면 그 기회는 실패하고 바로 다음 기회로 넘어갑니다")}</div>
+        <div>{tx("짧은 메이트일수록 좋은 등급입니다. {0}이 좋은 등급을 받을 확률이 높습니다", <b style={{ color: T.ink }}>{t("퍼즐 레이팅이 낮은 쪽")}</b>)}</div>
+        <div>{t("동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이깁니다")}</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -4870,7 +4933,34 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   // 무관하게 그대로 유지되므로, "일반"으로 다시 돌아오면 하던 대국이 그대로 이어진다.
   // (v0.5.5, 사용자 요청) 일반 대국 설정(타임 컨트롤·상대)은 체스보드 버튼을 누르면 뜨는 별도 창에서 고른다 — 대국이
   // 시작되면(step → playing) 창을 닫고, 창을 닫을 때 진행 중이던 매칭 대기·친구 도전은 취소한다.
-  const [setupOpen, setSetupOpen] = useState(false);
+  // (v0.8.0) 처음 주소가 /play/standard면 일반 대국 화면으로 시작
+  const [setupOpen, setSetupOpenRaw] = useState(() => typeof window !== "undefined" && playSubFromPath(window.location.pathname) === "standard");
+  const setupOpenRef = useRef(setupOpen); setupOpenRef.current = setupOpen;
+  const setSetupOpen = (v) => { const prev = setupOpenRef.current; if (v && !prev) pushPlaySub("standard"); if (!v && prev) popPlaySub("standard"); setupOpenRef.current = v; setSetupOpenRaw(v); };
+  const mgActiveRef = useRef(null);
+  const [mgOpenRequest, setMgOpenRequest] = useState(null);
+  useEffect(() => {
+    const onPop = () => {
+      const want = playSubFromPath(window.location.pathname);
+      const cur = setupOpenRef.current ? "standard" : mgActiveRef.current ? PLAY_SUB_OF[mgActiveRef.current] : null;
+      if (cur && cur !== want) {
+        // 열린 화면에서 뒤로가기 — 주소를 되돌려 두고 그 화면의 뒤로 버튼처럼 처리(닫히면 popPlaySub가 한 칸 뒤로 간다)
+        try { window.history.pushState({ ...(window.history.state || {}), play: true, playSub: cur }, "", "/play/" + cur); } catch { }
+        if (!playScreenBack()) { if (cur === "standard") setSetupOpen(false); }
+        return;
+      }
+      if (!cur && want === "standard") setSetupOpenRaw(true);
+      else if (!cur && want && want !== "deckmate") { const k = Object.keys(PLAY_SUB_OF).find((x) => PLAY_SUB_OF[x] === want); if (k) setMgOpenRequest({ key: k, n: Date.now() }); }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // /play/deckmate — 데크메이트 블록으로
+  useEffect(() => {
+    if (playSubFromPath(window.location.pathname) !== "deckmate") return undefined;
+    const id = setTimeout(() => { const el = document.querySelector("[data-deckmate]"); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 600);
+    return () => clearTimeout(id);
+  }, []);
   const [chessRankOpen, setChessRankOpen] = useState(false); // (v0.6.1) 일반 대국 랭킹 화면
   // (v0.5.5, 사용자 요청) "일반/스페셜" 토글을 없애고 일반 대국 화면 아래에 미니게임 목록을 함께 보여준다 —
   // 전역 알람 박스에서 미니게임 친구 도전장을 수락하면(specialResume) PlaySpecialGames가 곧장 그 대국을 연다.
@@ -5363,7 +5453,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
     setBotThinking(true);
     const fen = fenOfRoot(fenRoot, sans);
     const curSans = sans;
-    Promise.all([pickBotMove(engine, fen, botTier.elo, botMoveMemoryRef.current), new Promise((r) => setTimeout(r, botThinkDelayMs(botTier.elo)))]).then(([uci]) => {
+    Promise.all([pickBotMove(engine, fen, botTier.elo, botMoveMemoryRef.current, botTier.style), new Promise((r) => setTimeout(r, botThinkDelayMs(botTier.elo)))]).then(([uci]) => {
       if (cancelled) return;
       setBotThinking(false);
       if (!uci) return;
@@ -5481,7 +5571,8 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
           opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 28, height: 28, borderRadius: "50%", background: oppName ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#5A4630", color: oppName ? "#241509" : T.ivory, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{oppName ? oppName[0].toUpperCase() : <User size={14} />}</span>
         ) : isTop ? (
-          <span style={{ width: 28, height: 28, borderRadius: "50%", background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={14} /></span>
+          botTier.coach ? <span style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "flex-end", justifyContent: "center", background: "#F7EEDC", boxShadow: "0 0 0 1.5px " + T.brassHi }}><Mascot name={botTier.coach} emotion="great" size={28} /></span>   // (v0.8.0) 코치 봇은 코치 그림
+          : <span style={{ width: 28, height: 28, borderRadius: "50%", background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={14} /></span>
         ) : myPhoto ? (
           <img src={myPhoto} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
         ) : (
@@ -5512,10 +5603,22 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   const wideGame = !narrow && step === "playing";   // (v0.7.9) 데스크톱 대국 화면 2단
   const setupLobby = !(mode === "pvp" && (pvpWaiting || myInvite)) && setupPhase === "choose";   // (v0.7.9) 설정 화면 2단(소개·기록 | 고르기)
   const showQuest = !!(questActive && dailyQuest && step === "setup");
-  const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
+  const closeSetup = () => {
+    if (setupPhase === "bot" && !pvpWaiting && !myInvite) { setSetupPhase("choose"); return; }   // (v0.8.0) 봇 고르기 단계에선 한 단계 뒤로(예전 "< 뒤로" 버튼 역할)
+    if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false);
+  };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   // (v0.7.4, 사용자 요청) 모바일에서는 게임과 일일 퀘스트를 학습 탭과 완전히 같은 가로 스와이프 2페이지(SwipePager)로 보여 준다. 데스크톱은 좌우 2열.
   const pagedPlay = narrow && showQuest;
+  // (v0.8.0) 넘김 페이지의 플레이 페이지(일반 대국~미니게임) 높이 — 퀘스트 페이지를 같은 높이로 맞춘다. 재기는 ResizeObserver 알림 안에서만(check-render-perf).
+  const [hubH, setHubH] = useState(0);
+  const hubRoRef = useRef(null);
+  const hubMeasureRef = useCallback((el) => {
+    if (hubRoRef.current) { hubRoRef.current.disconnect(); hubRoRef.current = null; }
+    if (!el || typeof ResizeObserver === "undefined") return;
+    hubRoRef.current = new ResizeObserver(() => { const h = Math.round(el.getBoundingClientRect().height); setHubH((p) => (Math.abs(p - h) > 1 ? h : p)); });
+    hubRoRef.current.observe(el);
+  }, []);
   // (v0.7.8, 사용자 요청) 데스크톱 2×2 격자 — [일반 대국 + 데크메이트 | 일일 퀘스트] / [미니게임 | 플레이 퀘스트]. 같은 줄의 두 블록은 위·아래 끝을 맞춘다:
   //  1줄은 더 높은 쪽에 맞춰 데크메이트·일일 퀘스트가 늘어나고, 2줄은 미니게임 블록(그대로) 높이에 플레이 퀘스트가 맞춘다(fill).
   const gridMode = showQuest && !narrow;
@@ -5528,12 +5631,15 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
             {/* (v0.7.8, 사용자 요청) 일반 대국과 미니게임 사이 — 데크메이트(출시 예정) */}
             <DeckmateButton fill={gridMode} />
             {setupOpen && (
-              <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
+              <MinigameScreen title={t("일반 대국")} onBack={closeSetup} headerRight={<MinigameHelpButton title={t("일반 대국")}>
+                <div>{t("실시간 상대나 봇과 한 판을 둡니다. 타임 컨트롤을 고른 뒤 대국 상대 찾기, 봇과 플레이하기, 친구와 플레이하기 중 하나를 누릅니다")}</div>
+                <div>{t("대국 결과는 불릿, 블리츠, 래피드, 스탠다드 시간 분류별 레이팅에 반영됩니다")}</div>
+              </MinigameHelpButton>}>
                 {/* (v0.7.9, 사용자 요청) 데스크톱은 미니게임 로비와 같은 2단(mg-lobby) — 왼쪽 소개 카드·내 기록, 오른쪽 타임 컨트롤·상대 고르기. 봇 고르기는 2열. */}
                 <div className={setupLobby ? "mg-lobby" : undefined} style={{ width: "100%", maxWidth: setupPhase === "bot" && !narrow ? 720 : 460, margin: "0 auto", paddingTop: 4 }}>
                 {setupLobby && (
                   <div className="mg-lobby-col mg-lobby-left" style={{ display: "contents" }}>
-                    <div style={{ marginBottom: 12 }}><MinigameHero spec={NORMAL_GAME_SPEC} /></div>
+                    <div style={{ marginBottom: 12 }}><ModeHero mode="standard" name={NORMAL_GAME_SPEC.name} accent={NORMAL_GAME_SPEC.accent} big /></div>
                     <div style={{ marginBottom: 12 }}><MinigameStatsBar myUid={myUid} game={chessGame} row={chessStats} onOpenRanking={() => setChessRankOpen(true)} /></div>
                   </div>
                 )}
@@ -5631,8 +5737,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
               </>
             ) : (
               <>
-                <button onClick={() => setSetupPhase("choose")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 14, padding: "6px 10px 6px 6px", borderRadius: 8, border: "none", background: "transparent", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
-                  {tx("{0} 뒤로", <ChevronLeft size={16} />)}</button>
+                {/* (v0.8.0, 사용자 요청) "< 뒤로" 버튼은 없앴다 — 화면 위쪽 뒤로 버튼이 이 단계에서는 타임 컨트롤 고르기로 돌아간다(closeSetup) */}
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("진영 선택")}</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", t("백")], ["b", t("흑")], ["random", t("랜덤")]].map(([k, lb]) => (
@@ -5642,16 +5747,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                 </div>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("상대할 봇 선택")}</div>
                 <div className="oc-bot-grid" style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
-                  {PLAY_BOT_TIERS.map((t) => (
-                    <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", boxShadow: botTier.elo === t.elo ? "0 6px 14px -10px rgba(120,84,30,.8)" : "none", cursor: "pointer", textAlign: "left" }}>
-                      <span style={{ width: 36, height: 36, borderRadius: 11, background: tierGradientCss(PLAY_BOT_TIER_KEY[t.elo]), color: "rgba(36,21,9,.85)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: botTier.elo === t.elo ? "0 0 0 2px rgba(255,246,222,.9), 0 0 0 3.5px " + T.brass : "inset 0 1px 0 rgba(255,255,255,.35)", opacity: botTier.elo === t.elo ? 1 : 0.88 }}><Cpu size={17} /></span>
-                      <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 15, color: T.ink, lineHeight: 1.2 }}>{t.label}</span>
-                        <span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, marginTop: 1 }}>{t.desc}</span>
-                      </span>
-                      {botTier.elo === t.elo && <Check size={16} color={T.brass} />}
-                    </button>
-                  ))}
+                  {PLAY_BOT_TIERS.map((b) => <BotTierButton key={b.elo} b={b} selected={botTier.elo === b.elo} onClick={() => setBotTier(b)} Mascot={Mascot} Check={Check} />)}
                 </div>
                 <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "1px solid " + ((!engine || engine.status !== "ready") ? "rgba(150,112,58,.18)" : "rgba(236,203,134,.5)"), background: (!engine || engine.status !== "ready") ? "rgba(90,58,34,.08)" : "linear-gradient(180deg," + T.ebony3 + "," + T.ebony2 + ")", color: (!engine || engine.status !== "ready") ? "rgba(90,58,34,.5)" : T.brassHi, boxShadow: (!engine || engine.status !== "ready") ? "none" : "0 10px 22px -14px rgba(36,21,9,.85)", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? t("엔진을 준비하는 중...") : t("대국 시작")}</button>
               </>
@@ -5731,7 +5827,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
               {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
               <div className="flex items-center justify-center gap-3" style={{ marginTop: 2 }}>
                 <div style={{ position: "relative" }}>
-                  <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen}><Settings size={16} /></NavBtn>
+                  <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen} label={t("설정")}><Settings size={16} /></NavBtn>
                   {optionsOpen && (
                     <>
                       <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
@@ -5754,8 +5850,8 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                     </>
                   )}
                 </div>
-                <NavBtn onClick={stepBack} disabled={!canGoBack}><ChevronLeft size={17} /></NavBtn>
-                <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
+                <NavBtn onClick={stepBack} disabled={!canGoBack} label={t("이전 수")}><ChevronLeft size={17} /></NavBtn>
+                <NavBtn onClick={stepForward} disabled={!canGoForward} label={t("다음 수")}><ChevronRight size={17} /></NavBtn>
               </div>
             </aside>
             <AnimatePresence>
@@ -5826,7 +5922,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
             {/* (사용자 요청) 하단 컨트롤 — 옵션(기권·리뷰·다시 설정 팝업) · 뒤로 · 앞으로(수순 되돌아보기) */}
             <div className="flex items-center justify-center gap-3" style={{ marginTop: 14 }}>
               <div style={{ position: "relative" }}>
-                <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen}><Settings size={16} /></NavBtn>
+                <NavBtn onClick={() => setOptionsOpen((v) => !v)} active={optionsOpen} label={t("설정")}><Settings size={16} /></NavBtn>
                 {optionsOpen && (
                   <>
                     <span onClick={() => setOptionsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
@@ -5849,8 +5945,8 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
                   </>
                 )}
               </div>
-              <NavBtn onClick={stepBack} disabled={!canGoBack}><ChevronLeft size={17} /></NavBtn>
-              <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
+              <NavBtn onClick={stepBack} disabled={!canGoBack} label={t("이전 수")}><ChevronLeft size={17} /></NavBtn>
+              <NavBtn onClick={stepForward} disabled={!canGoForward} label={t("다음 수")}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
           )
@@ -5861,15 +5957,25 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   // 그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다).
   const specialNode = (
         <div style={{ display: step === "setup" ? "block" : "none", marginTop: gridMode ? 0 : 14 }}>
-          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
+          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW}
+            openRequest={mgOpenRequest} onActiveChange={(k) => { mgActiveRef.current = k; }} />
         </div>
   );
-  const hubNode = <div style={{ minWidth: 0 }}>{hubTopNode}{specialNode}</div>;
+  const hubNode = <div ref={pagedPlay ? hubMeasureRef : undefined} style={{ minWidth: 0 }}>{hubTopNode}{specialNode}</div>;
+  // (v0.8.0, 사용자 요청) 모바일 넘김 페이지에서는 퀘스트 페이지가 옆 플레이 페이지와 같은 높이(SwipePager stretch)를 채워,
+  //  플레이 퀘스트 블록 아래 끝이 미니게임 블록 아래 끝과 같은 높이에 온다 — 일일 퀘스트는 촘촘하게(compact) 제 높이, 플레이 퀘스트가 남은 높이를 채우고
+  //  넘치는 줄은 블록 안에서 스크롤한다. 화면이 낮아 다 못 담으면 일일 퀘스트도 줄어들어 목록을 블록 안에서 스크롤한다(플레이 퀘스트는 최소 190px).
   const questNode = showQuest ? (
-        <div style={{ minWidth: 0, marginTop: narrow && !pagedPlay ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
-          <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
-          {/* (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래. 일반 대국·미니게임 조건을 달성하면 클리어 */}
-          <PlayQuestCard playQuest={playQuest} loggedIn={loggedIn} />
+        <div style={{ minWidth: 0, marginTop: narrow && !pagedPlay ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%",
+          ...(pagedPlay ? { height: hubH || undefined, display: "flex", flexDirection: "column", gap: 14 } : null) }}>
+          {pagedPlay ? <>
+            <div style={{ flex: "0 1 auto", minHeight: 0, display: "flex", flexDirection: "column" }}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} fill compact /></div>
+            <div style={{ flex: "1 1 0", minHeight: 190, display: "flex", flexDirection: "column" }}><PlayQuestCard playQuest={playQuest} loggedIn={loggedIn} fill compact /></div>
+          </> : <>
+            <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
+            {/* (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래. 일반 대국·미니게임 조건을 달성하면 클리어 */}
+            <PlayQuestCard playQuest={playQuest} loggedIn={loggedIn} />
+          </>}
         </div>
   ) : null;
   return (
@@ -5878,7 +5984,7 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
     // (v0.7.4, 사용자 요청) 일일 퀘스트는 학습 탭에서 이 탭으로 옮겼다. 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트로 나누고, 모바일은 허브 아래에 이어 붙인 세로 스크롤 페이지.
     // 대국 중(step === "playing")에는 퀘스트를 그리지 않는다. 숨겨진 탭에서 완료 공개 연출이 미리 끝나지 않도록 questActive(이 탭이 보일 때)만 마운트한다.
     <div style={gridMode ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gridTemplateAreas: '"hub dq" "mg pq"', columnGap: 28, rowGap: 14, alignItems: "stretch" } : { maxWidth: step === "playing" && !narrow ? 1180 : 880, margin: "0 auto" }}>
-      {pagedPlay ? <SwipePager pages={[{ key: "play", node: hubNode }, { key: "quest", node: questNode }]} />
+      {pagedPlay ? <SwipePager stretch pages={[{ key: "play", node: hubNode }, { key: "quest", node: questNode }]} />
         : gridMode ? (
           <>
             <div style={{ gridArea: "hub", minWidth: 0 }}>{hubTopNode}</div>

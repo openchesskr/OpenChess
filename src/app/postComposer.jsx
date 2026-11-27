@@ -15,7 +15,9 @@ import { postBadge } from "../components/badges.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { LegacyFrame } from "../components/legacyFrame.jsx";
-import { AnimatedMove, Board, REVIEW_DEPTH, REVIEW_MOVETIME_MS, analyzeGame, containsBannedWord, useNarrow } from "./common.jsx";
+import { AnimatedMove, Board, REVIEW_DEPTH, REVIEW_MOVETIME_MS, analyzeGame, containsBannedWord, useNarrow, ImageSourceMenu, scanImageFile } from "./common.jsx";
+import { fetchProfileGameRows, profileGameRowToGame, RecentGamesList } from "./gameHistory.jsx";
+import { SB_ON } from "../lib/supabaseClient.js";
 import { AccountChessStats } from "./profile.jsx";
 import { parsePostInput, decorateFrom } from "../lib/postInput.js";
 import { GAME_RESULTS, LEGACY_MAX_PLIES } from "../lib/legacyEntry.js";
@@ -88,33 +90,80 @@ function MoveEntryBoard({ root, sans, onChange }) {
   );
 }
 
-/* 1단계 — PGN·FEN 코드 입력(퍼즐 마법사 1단계와 같은 모양). parsed: parsePostInput 결과(ok) */
-function CodeInputStep({ title, value, setValue, onParsed, chesscom, chesscomUsername }) {
+/* (v0.8.0, 사용자 요청) 대국 목록 — OpenChess / chess.com 플랫폼 토글. 퍼즐 마법사·유산·대국 작성기가 함께 쓴다.
+   onSelect(g, id, platform): 고른 대국(chess.com 대국 객체 모양 — gameHistory.jsx), 같은 대국을 다시 누르면 onSelect(null).
+   OpenChess 대국은 내 끝난 일반 대국(실시간·봇, profile_recent_games). 둘 다 없으면 아무것도 그리지 않는다. */
+export function PostGamePicker({ chesscom, chesscomUsername, myUid, myUsername, selectedId, onSelect }) {
+  const ccReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
+  const [ocRows, setOcRows] = useState(null);
+  useEffect(() => {
+    if (!SB_ON || !myUid) { setOcRows([]); return undefined; }
+    let off = false;
+    fetchProfileGameRows(myUid).then((r) => { if (!off) setOcRows((Array.isArray(r) ? r : []).filter((x) => Array.isArray(x.sans) && x.sans.length > 0)); }).catch(() => { if (!off) setOcRows([]); });
+    return () => { off = true; };
+  }, [myUid]);
+  const ocGames = useMemo(() => (ocRows || []).map((r) => profileGameRowToGame(r, myUsername)), [ocRows, myUsername]);
+  const [platform, setPlatform] = useState(null);
+  const plat = platform || (ccReady ? "chesscom" : "openchess");
+  if (!ccReady && !(ocRows && ocRows.length) && ocRows !== null) return null;
+  const pick = (g, id) => { if (selectedId != null && id === selectedId) { onSelect(null); return; } onSelect(g, id, plat); };
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
+      <div role="group" aria-label={t("대국 플랫폼")} className="flex items-center" style={{ gap: 6, marginBottom: 10 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginRight: 2 }}>{t("대국 불러오기")}</span>
+        {[["openchess", "OpenChess"], ["chesscom", "chess.com"]].map(([k, lb]) => (
+          <button key={k} type="button" onClick={() => setPlatform(k)} aria-pressed={plat === k} className="press" style={pill(plat === k)}>{lb}</button>
+        ))}
+      </div>
+      {plat === "chesscom" ? (ccReady
+        ? <AccountChessStats chesscom={chesscom} username={chesscomUsername} selectedGameId={selectedId} onSelectGame={pick} />
+        : <p style={{ fontSize: 12, color: T.inkSoft, margin: "2px 0 4px" }}>{t("설정에서 chess.com 계정을 연동하면 대국을 불러올 수 있음")}</p>)
+        : ocRows === null ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "2px 0 4px" }}>{t("불러오는 중…")}</p>
+        : !ocGames.length ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "2px 0 4px" }}>{t("OpenChess에서 둔 대국 없음")}</p>
+        : <RecentGamesList games={ocGames} ratingChanges={new Map()} username={myUsername} resetKey="oc" onSelectGame={pick} selectedGameId={selectedId} />}
+    </div>
+  );
+}
+
+/* 1단계 — PGN·FEN 코드 입력(퍼즐 마법사 1단계와 같은 모양). parsed: parsePostInput 결과(ok).
+   (v0.8.0, 사용자 요청) 이미지 스캔 버튼(체스판 사진 → FEN, 기보 사진 → PGN)과 대국 목록 플랫폼 토글(PostGamePicker). onPickGame(g, platform): 목록에서 고른 대국 */
+function CodeInputStep({ title, value, setValue, onParsed, chesscom, chesscomUsername, myUid, myUsername, onPickGame }) {
   const [err, setErr] = useState("");
   const [gid, setGid] = useState(null);
-  const ccReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
+  const [scanning, setScanning] = useState(false), [scanPct, setScanPct] = useState(0);
   const submit = (raw) => {
     const r = parsePostInput(raw);
     if (!r.ok) { setErr(r.reason === "empty" ? t("PGN 또는 FEN 입력 필요") : r.reason === "illegal" ? t("{0}번째 수를 둘 수 없음", r.at + 1) : t("잘못된 기보 형식")); onParsed(null); return; }
     setErr(""); onParsed(r);
   };
+  const onScanFile = async (file) => {
+    setScanning(true); setScanPct(0); setErr("");
+    try {
+      const data = await scanImageFile(file, setScanPct);
+      let text = null;
+      if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
+      else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
+      if (!text) { setErr(t("이미지에서 체스판이나 기보를 인식하지 못함")); return; }
+      setValue(text); setGid(null); onParsed(null); if (onPickGame) onPickGame(null);
+    } catch (e) { setErr((e && e.message) || t("이미지 스캔 실패")); }
+    finally { setScanning(false); setScanPct(0); }
+  };
   return (
     <div style={card}>
       <div style={stepTitle}>{title}</div>
-      <textarea value={value} onChange={(e) => { setValue(e.target.value); setErr(""); onParsed(null); setGid(null); }} rows={3}
+      <textarea value={value} onChange={(e) => { setValue(e.target.value); setErr(""); onParsed(null); setGid(null); if (onPickGame) onPickGame(null); }} rows={3}
         placeholder={t("예: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ...\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")} style={{ ...inputBox, resize: "vertical" }} />
       {err && <div role="alert" style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{err}</div>}
-      <div className="flex justify-end" style={{ marginTop: 8 }}>
+      <div className="flex justify-end items-center" style={{ marginTop: 8, gap: 8 }}>
+        <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label={t("이미지 스캔")} busyLabel={t("인식하는 중... {0}%", scanPct)}
+          buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, background: scanning ? "rgba(0,0,0,.06)" : "transparent", color: scanning ? T.inkSoft : T.ink, fontWeight: 700, fontSize: 12, border: "1px solid #C9B58C", cursor: scanning ? "default" : "pointer" }} />
         <button type="button" onClick={() => submit(value)} className="press" style={darkBtn}>{t("확인")}</button>
       </div>
-      {ccReady && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-          <AccountChessStats chesscom={chesscom} username={chesscomUsername} selectedGameId={gid} onSelectGame={(g, id) => {
-            if (gid != null && id === gid) { setGid(null); setValue(""); onParsed(null); return; }
-            const txt = sansToPgnText(g.moves, "w"); setGid(id); setValue(txt); submit(txt);
-          }} />
-        </div>
-      )}
+      <PostGamePicker chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername} selectedId={gid} onSelect={(g, id, platform) => {
+        if (!g) { setGid(null); setValue(""); onParsed(null); if (onPickGame) onPickGame(null); return; }
+        if (onPickGame) onPickGame(g, platform);   // 먼저 — submit → onParsed가 고른 대국 정보를 쓴다
+        const txt = sansToPgnText(g.moves, "w"); setGid(id); setValue(txt); submit(txt);
+      }} />
     </div>
   );
 }
@@ -138,7 +187,7 @@ function PostPreview({ entry, kind }) {
 const publishFail = (r) => (r.reason === "dup" ? t("이미 같은 게시물이 있음") : r.reason === "full" ? t("게시물은 최대 200개까지") : r.reason === "size" ? t("게시물 저장 공간이 가득 참") : t("게시할 수 없는 게시물"));
 
 /* 유산 — 채점 → 최선·유일·탁월 수 고르기 → 게시 */
-function LegacyPane({ engine, onPublish, onDone, chesscom, chesscomUsername }) {
+function LegacyPane({ engine, onPublish, onDone, chesscom, chesscomUsername, myUid, myUsername }) {
   const [raw, setRaw] = useState("");
   const [parsed, setParsed] = useState(null);
   const [extra, setExtra] = useState([]);   // FEN만 넣었을 때 보드에서 이어 둔 수
@@ -176,7 +225,7 @@ function LegacyPane({ engine, onPublish, onDone, chesscom, chesscomUsername }) {
   };
   return (
     <>
-      <CodeInputStep title={t("1. PGN 또는 FEN 코드 입력")} value={raw} setValue={setRaw} onParsed={(p) => { setParsed(p); setExtra([]); setSide(null); }} chesscom={chesscom} chesscomUsername={chesscomUsername} />
+      <CodeInputStep title={t("1. PGN 또는 FEN 코드 입력")} value={raw} setValue={setRaw} onParsed={(p) => { setParsed(p); setExtra([]); setSide(null); }} chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername} />
       {needBoard && (
         <div style={card}>
           <div style={stepTitle}>{t("FEN 포지션에서 이어 둘 수")}</div>
@@ -241,8 +290,15 @@ function PublishBar({ msg, onPublish, label, disabled }) {
   );
 }
 
+/* 고른 대국의 결과 → PGN 결과 표기(g.result는 내 기준 win·loss·draw, g.color는 내 색) */
+export function gameResultCode(g) {
+  if (!g || !g.result) return "*";
+  if (g.result === "draw") return "1/2-1/2";
+  const whiteWon = (g.result === "win") === (g.color === "w");
+  return whiteWon ? "1-0" : "0-1";
+}
 /* 대국 — 대국자·결과·진영 → 게시 */
-function GamePane({ onPublish, onDone, chesscom, chesscomUsername }) {
+function GamePane({ onPublish, onDone, chesscom, chesscomUsername, myUid, myUsername }) {
   const [raw, setRaw] = useState("");
   const [parsed, setParsed] = useState(null);
   const [extra, setExtra] = useState([]);
@@ -250,9 +306,19 @@ function GamePane({ onPublish, onDone, chesscom, chesscomUsername }) {
   const [msg, setMsg] = useState(null);
   const root = parsed ? parsed.root : null;
   const sans = parsed ? (parsed.sans.length ? parsed.sans : extra) : [];
+  // (v0.8.0, 사용자 요청) OpenChess·chess.com 대국을 목록에서 고르면 2단계(대국자·결과·보드 방향)를 그 대국 정보로 채운다 —
+  //  PGN 머리말 해석(onParsed)이 같은 틱에 빈 값으로 덮지 않도록 고른 대국을 먼저 기억해 두고 onParsed에서 우선한다.
+  const pickedRef = useRef(null);
+  const fillFromGame = (g) => {
+    const w = (g.white && g.white.username) || (g.color === "w" ? myUsername : "") || "";
+    const b = (g.black && g.black.username) || (g.color === "b" ? myUsername : "") || "";
+    setWhite(String(w).slice(0, 40)); setBlack(String(b).slice(0, 40));
+    setResult(gameResultCode(g)); setSide(g.color === "b" ? "b" : "w");
+  };
   const onParsed = (p) => {
     setParsed(p); setExtra([]); setMsg(null);
-    if (p) { setWhite(p.meta.white || ""); setBlack(p.meta.black || ""); setResult(p.meta.result || "*"); }
+    if (p && pickedRef.current) fillFromGame(pickedRef.current);
+    else if (p) { setWhite(p.meta.white || ""); setBlack(p.meta.black || ""); setResult(p.meta.result || "*"); }
   };
   const banned = containsBannedWord(white) || containsBannedWord(black);
   const entry = sans.length ? { sans, moveIndex: sans.length - 1, playCount: 1, beforeCount: sans.length - 1, kinds: null, side, savedAt: Date.now(), kind: "game", meta: { white: white.trim(), black: black.trim(), result }, root } : null;
@@ -264,7 +330,8 @@ function GamePane({ onPublish, onDone, chesscom, chesscomUsername }) {
   };
   return (
     <>
-      <CodeInputStep title={t("1. PGN 또는 FEN 코드 입력")} value={raw} setValue={setRaw} onParsed={onParsed} chesscom={chesscom} chesscomUsername={chesscomUsername} />
+      <CodeInputStep title={t("1. PGN 또는 FEN 코드 입력")} value={raw} setValue={setRaw} onParsed={onParsed} chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername}
+        onPickGame={(g) => { pickedRef.current = g || null; }} />
       {parsed && !parsed.sans.length && (
         <div style={card}>
           <div style={stepTitle}>{t("FEN 포지션에서 이어 둘 수")}</div>
@@ -291,7 +358,7 @@ function GamePane({ onPublish, onDone, chesscom, chesscomUsername }) {
 }
 
 /* 전체 화면 작성기. type/setType: 지금 고른 종류, children: 퍼즐 마법사. onPublish(kind, entry) → addPost 결과 */
-export function PostComposer({ type, setType, onClose, engine, onPublish, chesscom, chesscomUsername, children }) {
+export function PostComposer({ type, setType, onClose, engine, onPublish, chesscom, chesscomUsername, myUid, myUsername, children }) {
   const narrow = useNarrow(640);
   useEffect(() => {
     const h = (e) => { if (e.key === "Escape") onClose(); };
@@ -320,8 +387,8 @@ export function PostComposer({ type, setType, onClose, engine, onPublish, chessc
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", padding: "14px 16px calc(28px + env(safe-area-inset-bottom, 0px))" }}>
           {type === "puzzle" ? children
-            : type === "legacy" ? <LegacyPane engine={engine} onPublish={onPublish} onDone={onClose} chesscom={chesscom} chesscomUsername={chesscomUsername} />
-            : <GamePane onPublish={onPublish} onDone={onClose} chesscom={chesscom} chesscomUsername={chesscomUsername} />}
+            : type === "legacy" ? <LegacyPane engine={engine} onPublish={onPublish} onDone={onClose} chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername} />
+            : <GamePane onPublish={onPublish} onDone={onClose} chesscom={chesscom} chesscomUsername={chesscomUsername} myUid={myUid} myUsername={myUsername} />}
         </div>
       </div>
     </motion.div>

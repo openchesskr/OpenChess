@@ -1,15 +1,15 @@
 // (v0.6.0, App.jsx 분할 · v0.7.3 learn.jsx → analysis.jsx) 'analysis'(분석 탭) 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
+import { lichessFetchWithRetry, lichessForeground, LICHESS_API, masterGamesFor, masterGameMoves } from "../lib/lichessApi.js";
 import { autoMoveKeywords, blockKeywords } from "../lib/moveKeywords.js";
 import { tilePuzzleTheme } from "../lib/matePuzzle.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { CommunityBlock } from "../components/communityBlock.jsx";
 import { BRASS_SCROLLBAR, BrassScrollStyle, MoreBelowHint } from "../components/brassScroll.jsx";
 import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
-import { LOOP } from "../lib/perfMode.js";
+import { LOOP, engineLineGapMs } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
-import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
+import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, legalDests, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { rankMasterMatches } from "../lib/masterNameSearch.js";
@@ -23,7 +23,7 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus, MoreVertical } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { ListChecks, Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus, MoreVertical } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -33,12 +33,13 @@ import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { BestMoveJumpButton, ListPager, NavBtn } from "../components/uiPrimitives.jsx";
 import { playMoveSfx } from "../lib/prefs.js";
-import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick, usersProfiles } from "./common.jsx";
+import { kwSettled, AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick, usersProfiles } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 import UgcText from "../components/UgcText.jsx";
 import { useTabMemory } from "../lib/tabMemory.js";
+import { PieceIcon } from "../components/pieceIcons.jsx";   // (v0.8.0) 계산 중 안내 상자의 파셋 기물
 async function lichessFetchText(url) {
   const hit = _lichessCache.get(url);
   if (hit && Date.now() - hit.t < 10 * 60 * 1000) return hit.data;
@@ -78,29 +79,22 @@ async function fetchDevMasterGames(sans) {
     }));
 }
 // (기능) 외부 대국 데이터베이스(선수/이벤트/오프닝 묶음)에서 뽑아낸 정적 마스터 대국 —
-// scripts/build-master-games.mjs로 public/master-games.json 생성. Lichess 마스터 DB 표본이
+// scripts/build-master-games.mjs로 data/master-games.json 생성. Lichess 마스터 DB 표본이
 // 적은 포지션을 보충하려고 만들었지만, 지금은 "출처 구분 없이 항상 합쳐서 보여주기"로 정해서
 // 매번 Lichess·개발자 추가분과 함께 합친다. 최초 1회만 fetch해서 메모리에 캐싱 — 파일이 몇 MB급이라
 // 초기 번들에는 안 넣고 마스터 대국을 처음 조회할 때만 지연 로드한다.
 // Lichess 마스터 DB + 개발자 추가분 + 외부 정적 데이터를 한 목록으로 합친다 —
 // 화면(FocusPanel)에서 출처를 구분하지 않는다.
 async function fetchAllMasterGames(sans, count = 15) {
-  const [lichessRes, dev, staticData] = await Promise.all([
+  // (v0.8.0) 정적 DB는 필요한 조각만 받는다(lib/lichessApi.js masterGamesFor) — 2수 이하 수순은 대표 대국(sample)과 정확한 통계.
+  const [lichessRes, local] = await Promise.all([
     fetchMasterTopGames(sans, count).catch(() => ({ games: [], stats: null })),
-    fetchDevMasterGames(sans).catch(() => []),
-    loadMasterGameData(),
+    masterGamesFor(sans),
   ]);
-  // (v0.6.6) 정적 DB는 접두사 색인으로 이 포지션 이후의 모든 대국을 상한 없이 가져온다(staticMasterGamesFor). Lichess 대표 대국(최대 15판)·개발자 추가분은
-  // 정적 DB와 같은 대국(두 선수·연도·결과가 같음)일 때만 빼고 합친다 — 정적 DB 안의 대국끼리는 절대 합치지 않는다(같은 두 선수가 한 해에 여러 번 둘 수 있음).
-  const gameKey = (g) => normalizePlayerKey(g.white && g.white.name) + "|" + normalizePlayerKey(g.black && g.black.name) + "|" + (g.year || "") + "|" + (g.winner || "d");
-  const staticGames = staticMasterGamesFor(sans, staticData);
-  const inStatic = new Set(staticGames.map(gameKey));
-  // (v0.6.6, 사용자 요청) Lichess 대표 대국은 대회 정보가 없어 마스터 통계 목록에서 뺀다(통계 숫자만 Lichess 집계를 쓴다).
-  const games = staticGames;   // (v0.6.6, 사용자 요청) 개발자가 직접 추가한 대국도 대회 정보가 없어 마스터 통계에서 뺀다
-  // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 전체에서 직접 센다(오프라인·Lichess 장애 때도 동작).
+  // (v0.6.6, 사용자 요청) Lichess 대표 대국·개발자 추가분은 대회 정보가 없어 마스터 통계 목록에서 뺀다 — 목록은 정적 DB만(통계 숫자만 Lichess 집계).
+  // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 집계(오프라인·Lichess 장애 때도 동작).
   const ls = lichessRes.stats, lichessOk = ls && ls.white + ls.draws + ls.black > 0;
-  const stats = lichessOk ? ls : (staticData ? staticMasterStatsFor(sans, staticData) : null);
-  return { games, stats };
+  return { games: local.games, stats: lichessOk ? ls : local.stats, total: local.total, sample: local.sample };
 }
 async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating, year, pgn, sans, result }) {
   await sbInsert("master_games_dev", {
@@ -136,10 +130,9 @@ async function fetchAnyMasterGamePgn(id) {
     return rows[0].sans;
   }
   if (typeof id === "string" && id.startsWith("extm_")) {
-    const data = await loadMasterGameData();
-    const g = data && data.games[+id.slice(5)];
-    if (!g) throw new Error("not-found");
-    return g.moves.split(" ");
+    const mv = await masterGameMoves(+id.slice(5));   // (v0.8.0) 그 대국이 든 조각만 받는다
+    if (!mv) throw new Error("not-found");
+    return mv;
   }
   return fetchMasterGamePgn(id);
 }
@@ -796,22 +789,90 @@ function QuestTag({ onClick }) {
       </motion.span>
       {/* 아이콘 원 */}
       <motion.span initial={{ opacity: 0, transform: "scale(0.3)" }} animate={{ opacity: 1, transform: "scale(1)" }} transition={{ duration: 0.32, ease: [0.2, 0.9, 0.3, 1.35] }}
-        style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform, opacity" }}>
-        <MaterialIcon name="assignment" size={12} color="#241509" />
+        style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", background: "linear-gradient(180deg,#A8842F,#6E5220)", border: "2px solid " + T.paper, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform, opacity" }}>
+        {/* (v0.8.0, 사용자 요청) 아이콘을 밝은 색으로 — 짙은 금색 원 위에 밝은 크림색 퀘스트 목록 아이콘(파셋 세트) */}
+        <ListChecks size={12} color="#FFF4D6" />
       </motion.span>
     </Tag>
   );
 }
 const WDL_PLACEHOLDER = { w: 1, d: 1, b: 1 };
 const wdlOk = (wdl) => !!(wdl && (wdl.w + wdl.d + wdl.b) > 0);   // WinBar가 실제로 그리는 경우(합계 0이면 WinBar는 아무것도 그리지 않는다)
+// (v0.8.0, 사용자 요청) 후보 수 계산 중 안내 — 예전엔 수 블록 위 한 줄("MILKU 수 계산 중")과 빈 목록 상자("제안된 수 없음…")가 따로였다.
+//  하나로 합쳐, 방금 수를 둔 진영의 코치(백 MILKU · 흑 KOKOA)가 작은 체스보드 위에서 후보 칸을 짚어 보며 계산하는 장면을 보여 준다.
+//  · 보드 4×4: 두 진영 기물(파셋 아이콘)이 있고, 금빛 표시가 후보 칸을 차례로 짚으며, 코치 진영의 나이트가 그 칸으로 L자로 뛰어 본다.
+//  · 문구: "MILKU가 수를 계산하는 중입니다" + 차례로 깜빡이는 점 세 개, 아래로 계산 진행 띠.
+//  · compact: 이미 수 블록이 있는 채로 다시 계산할 때(낮은 높이), 아니면 목록 자리를 채우는 큰 상자. 애니메이션은 transform·opacity만, 가벼운 모드에서는 멈춘다.
+const THINK_CSS = `
+@keyframes ocThinkHop{0%,18%{transform:translate(0,0)}30%{transform:translate(var(--hx1),var(--hy1)) scale(1.08)}38%,52%{transform:translate(var(--hx1),var(--hy1))}64%{transform:translate(var(--hx2),var(--hy2)) scale(1.08)}72%,86%{transform:translate(var(--hx2),var(--hy2))}100%{transform:translate(0,0)}}
+@keyframes ocThinkMark{0%,100%{opacity:0;transform:scale(.6)}12%,30%{opacity:1;transform:scale(1)}40%{opacity:0;transform:scale(1.25)}}
+@keyframes ocThinkDot{0%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-2px)}}
+@keyframes ocThinkBob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-3px) rotate(2deg)}}
+@keyframes ocThinkBar{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+.oc-think-hop{animation:ocThinkHop 3.6s cubic-bezier(.4,0,.2,1) infinite}
+.oc-think-mark{animation:ocThinkMark 3.6s ease-in-out infinite}
+.oc-think-dot{display:inline-block;animation:ocThinkDot 1.2s ease-in-out infinite}
+.oc-think-bob{animation:ocThinkBob 2.4s ease-in-out infinite}
+.oc-think-bar{animation:ocThinkBar 1.6s cubic-bezier(.45,0,.35,1) infinite}
+html[data-perf="lite"] .oc-think-hop,html[data-perf="lite"] .oc-think-mark,html[data-perf="lite"] .oc-think-bob,html[data-perf="lite"] .oc-think-bar,html[data-perf="lite"] .oc-think-dot{animation-iteration-count:2}
+`;
+function CoachThinkingBox({ coach = "milku", compact = false }) {
+  const side = coach === "kokoa" ? "b" : "w", other = side === "w" ? "b" : "w";
+  const name = coach === "kokoa" ? "KOKOA" : "MILKU";
+  const cell = compact ? 13 : 22, n = 4, B = cell * n;
+  const sq = (r, c) => ({ left: c * cell, top: r * cell });
+  // 나이트(코치 진영)는 (3,1)에서 시작해 후보 칸 (1,2) → (2,3)을 차례로 짚어 본다(L자 두 번). 금빛 표시가 먼저 그 칸을 짚는다.
+  const start = [3, 1], h1 = [1, 2], h2 = [2, 3];
+  const px = (a, b) => (b[1] - a[1]) * cell + "px", py = (a, b) => (b[0] - a[0]) * cell + "px";
+  const pieces = side === "w"
+    ? [["P", "w", 2, 0], ["P", "b", 1, 1], ["B", "b", 0, 3], ["K", "b", 0, 0]]
+    : [["P", "b", 1, 0], ["P", "w", 2, 1], ["B", "w", 3, 3], ["K", "w", 3, 0]];
+  const ps = Math.round(cell * 0.84);
+  return (
+    <div role="status" aria-live="polite" style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: compact ? 12 : 18, marginBottom: compact ? 10 : 0,
+      padding: compact ? "8px 12px" : "18px 18px", borderRadius: 14, background: T.paper, border: "1px solid #D6C29A", boxShadow: "0 3px 0 #C9B58C, 0 8px 16px -10px rgba(0,0,0,.5)" }}>
+      <style>{THINK_CSS}</style>
+      {/* 코치(보드를 가리지 않게 왼쪽) */}
+      <span aria-hidden="true" className="oc-think-bob" style={{ flexShrink: 0, display: "block", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.3))" }}>
+        <Mascot name={coach} emotion="think" size={compact ? 34 : 58} />
+      </span>
+      {/* 작은 체스보드 + 기물 + 후보 칸 표시 */}
+      <div aria-hidden="true" style={{ position: "relative", flexShrink: 0, width: B + 4, height: B + 4 }}>
+        <div style={{ position: "absolute", left: 0, top: 0, width: B, height: B, borderRadius: 5, overflow: "hidden", border: "2px solid #6E4E2C", boxSizing: "content-box" }}>
+          {Array.from({ length: n * n }, (_, i) => { const r = Math.floor(i / n), c = i % n; return <span key={i} style={{ position: "absolute", ...sq(r, c), width: cell, height: cell, background: (r + c) % 2 ? "#B58863" : "#F0D9B5" }} />; })}
+          {[h1, h2].map((h, i) => (
+            <span key={"m" + i} className="oc-think-mark" style={{ position: "absolute", ...sq(h[0], h[1]), width: cell, height: cell, boxSizing: "border-box", border: Math.max(2, cell * 0.12) + "px solid #E8B93C", borderRadius: 3, background: "rgba(232,185,60,.28)", animationDelay: (i * 1.2) + "s" }} />
+          ))}
+          {pieces.map(([tp, cl, r, c], i) => <span key={"p" + i} style={{ position: "absolute", ...sq(r, c), width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", filter: cl === "w" ? "drop-shadow(0 0 1px rgba(60,40,20,.9))" : undefined }}><PieceIcon type={tp} color={cl} size={ps} /></span>)}
+          <span className="oc-think-hop" style={{ position: "absolute", ...sq(start[0], start[1]), width: cell, height: cell, display: "flex", alignItems: "center", justifyContent: "center", filter: side === "w" ? "drop-shadow(0 0 1px rgba(60,40,20,.9))" : undefined, "--hx1": px(start, h1), "--hy1": py(start, h1), "--hx2": px(start, h2), "--hy2": py(start, h2), willChange: "transform" }}>
+            <PieceIcon type="N" color={side} size={ps} />
+          </span>
+        </div>
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: compact ? 12.5 : 14.5, fontWeight: 800, color: T.ink, lineHeight: 1.35, fontFamily: SITE_FONT }}>
+          {tx("{0}가 수를 계산하는 중입니다", name)}
+          <span aria-hidden="true" style={{ marginLeft: 2, letterSpacing: 1, color: side === "w" ? "#A8842F" : "#5A3E22" }}>{[0, 1, 2].map((i) => <span key={i} className="oc-think-dot" style={{ animationDelay: i * 0.18 + "s" }}>•</span>)}</span>
+        </div>
+        {!compact && <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>
+          <PieceIcon type="K" color={side} size={14} /><span>{side === "w" ? t("백") : t("흑")}</span><span style={{ opacity: .5 }}>·</span><PieceIcon type="P" color={other} size={13} /><span>{t("후보 수와 평가치를 차례로 채웁니다")}</span>
+        </div>}
+        <div aria-hidden="true" style={{ position: "relative", marginTop: compact ? 6 : 10, height: compact ? 4 : 5, borderRadius: 3, background: "rgba(90,58,34,.12)", overflow: "hidden" }}>
+          <span className="oc-think-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "38%", borderRadius: 3, background: side === "w" ? "linear-gradient(90deg,rgba(232,185,60,0),#E8B93C,rgba(232,185,60,0))" : "linear-gradient(90deg,rgba(90,62,34,0),#6E4E2C,rgba(90,62,34,0))", willChange: "transform" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick, onCreatePuzzle }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = blockKeywords(m);   // (v0.7.6) 포지션을 분석해 붙인 자동 키워드 하나(lib/moveKeywords.js)
   const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
-  const gamesDisp = useCountUp(m.games, 900);
-  const posGamesDisp = useCountUp(posGames, 500);
-  const adoptDisp = useCountUp(m.adopt, 900, 2);
+  // (v0.8.0, 사용자 요청: 통계를 빨리) 숫자가 올라가는 연출 0.9초 → 0.35초 — 값이 와도 최종 숫자가 늦게 보이던 것을 줄인다
+  const gamesDisp = useCountUp(m.games, 350);
+  const posGamesDisp = useCountUp(posGames, 300);
+  const adoptDisp = useCountUp(m.adopt, 350, 2);
   return (
     <div style={{ minWidth: 0, borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지.
@@ -866,15 +927,7 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
 const Q_MASCOT = { brilliant: ["kokoa", "celebrate"], best: ["milku", "great"], excellent: ["milku", "wink"], good: ["milku", "great"], book: ["milku", "wink"], only: ["milku", "surprise"], pending: ["milku", "think"], inaccuracy: ["kokoa", "think"], miss: ["kokoa", "surprise"], mistake: ["kokoa", "surprise"], blunder: ["kokoa", "angry"] };
 function mascotForKind(kind) { return Q_MASCOT[kind] || ["milku", "great"]; }
 /* ============================================================ 병합 훅 (Lichess 우선 + 사용자 착수 블록 + 백관점 평가) ============================================================ */
-// (v0.6.6, 사용자 요청: 분석 탭에서 수를 둘 때 렉 완화) 엔진이 depth마다 보내는 평가·라인 갱신을 최대 ~8회/초로 묶는다 — 갱신 하나마다 분석 탭 전체(3,500줄 컴포넌트)가
-// 다시 그려져, 수를 둔 직후 엔진이 depth를 쏟아낼 때 입력이 끊겼다. 마지막 값은 반드시 반영(trailing)하고, cancel()로 대기 중인 갱신을 버릴 수 있다(확정 결과가 먼저 들어간 뒤 옛 값이 덮지 않게).
-function throttled(fn, ms) {
-  let last = 0, timer = null, pend, has = false;
-  const run = () => { timer = null; last = performance.now(); if (has) { has = false; const a = pend; pend = undefined; fn(a); } };
-  const f = (a) => { pend = a; has = true; const w = ms - (performance.now() - last); if (w <= 0) run(); else if (!timer) timer = setTimeout(run, w); };
-  f.cancel = () => { if (timer) clearTimeout(timer); timer = null; has = false; pend = undefined; };
-  return f;
-}
+// (v0.6.6 → v0.8.0) 엔진 평가·라인 갱신을 묶던 throttled()는 useMergedMoves의 공용 박자(onTick)로 바꿨다 — 여러 갱신이 같은 타이머에서 한 번에 그려진다.
 function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortBy) {
   const node = snapNode(sans);
   const key = sans.join(" ");
@@ -882,6 +935,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const color = ply % 2 === 0 ? "w" : "b";
   const [moves, setMoves] = useState([]);
   const [posGames, setPosGames] = useState(node ? node.posGames : null);
+  // (v0.8.0) 이 포지션의 전체 통계 목록이 빠짐없는지(fetchLichess complete) — 그렇다면 목록에 없는 수는 0판으로 바로 채운다(수마다 따로 묻지 않음)
+  const posCompleteRef = useRef({ key: null, complete: false });
   const [statsLoading, setStatsLoading] = useState(false); // (사용자 요청) 리체스 회수/채택률 fetch가 아직 안 끝났음을 알려주는 플래그
   const [posEval, setPosEval] = useState(null);
   const [engineLines, setEngineLines] = useState([]); // (v0.1.3 기능) 엔진 상위 3줄(MultiPV) 전체 수순
@@ -902,6 +957,36 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   // MultiPV-10 보충(pvs)을 매번 엔진에 다시 물어봤는데, 둘 다 sans(포지션)에만 의존하지 이미 채워진
   // moves 개수와는 무관해 재실행 사이에 결과가 달라지지 않는다 — 포지션이 그대로인 한 캐시해 재질의를 건너뛴다.
   const posCacheRef = useRef({ key: null, multiPromise: null, live: new Map() });
+  // (v0.8.0 렉 수정) 후보 수 평가(live) 갱신 모아 반영 — 예전엔 엔진 작업자들이 보내는 진행 줄마다(onMoveProgress, 간격 제한 없음)
+  //  setMoves를 불러 분석 탭 전체(보드·수 블록·레이아웃 애니메이션 측정)가 초당 10번 넘게 다시 그려졌다(휴대폰에서 보드가 잠깐 사라질 만큼 밀림).
+  //  이제 수별 최신 값만 모아 engineLineGapMs()(보통 150ms·가벼운 모드 280ms)마다 한 번만 반영한다. 포지션(key)이 바뀌면 모아 둔 값은 버린다.
+  // (v0.8.0 렉 수정) 공용 박자 — 후보 수 평가·평가 막대·엔진 라인·탐색 깊이 갱신을 같은 타이머 한 번에 몰아 실행한다.
+  //  예전엔 셋이 각자 150ms 타이머로 따로 반영돼, 한 번 그릴 것을 세 번에 나눠 그렸다(React는 같은 작업 안의 상태 변경만 한 번에 그린다).
+  const tickRef = useRef({ jobs: new Map(), timer: 0, last: 0 });
+  const onTick = useCallback((id, fn) => {
+    const T = tickRef.current;
+    T.jobs.set(id, fn);
+    if (T.timer) return;
+    const wait = Math.max(0, engineLineGapMs() - (performance.now() - T.last));
+    T.timer = setTimeout(() => { T.timer = 0; T.last = performance.now(); const jobs = [...T.jobs.values()]; T.jobs.clear(); jobs.forEach((f) => f()); }, wait);
+  }, []);
+  useEffect(() => () => clearTimeout(tickRef.current.timer), []);
+  // (v0.8.0, 사용자 요청: 수 블록 평가치를 빨리) 엔진 풀을 첫 수를 두기 전에 미리 띄워 둔다 — 예전엔 첫 후보 수 평가 때 부팅을 시작해 그만큼 늦게 떴다.
+  useEffect(() => { if (liveOn && engine.status === "ready") getLivePool().catch(() => { }); }, [liveOn, engine.status, engine.profile]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const liveBatchRef = useRef({ key: null, map: new Map() });
+  const queueLive = useCallback((posKey, bySan, now) => {
+    const b = liveBatchRef.current;
+    if (b.key !== posKey) { b.key = posKey; b.map = new Map(); }
+    for (const k of Object.keys(bySan)) b.map.set(k, bySan[k]);
+    const flush = () => {
+      if (!b.map.size) return;
+      const m = b.map; b.map = new Map();
+      if (posCacheRef.current.key !== b.key) return;
+      setMoves((prev) => { let hit = false; const next = prev.map((x) => { const k = stripSuffix(x.san); if (!m.has(k)) return x; hit = true; return { ...x, live: m.get(k) }; }); return hit ? next : prev; });
+    };
+    if (now) { tickRef.current.jobs.delete("live"); flush(); }
+    else onTick("live", flush);
+  }, [onTick]);
   // (성능) 화면에 보이는 후보 수(캡 없이 최대 수십 개)의 실시간 평가가 메인 엔진 큐 하나로 한 번에
   // 하나씩 순서대로 처리되고 있었다 — 후보 수가 많은 포지션일수록 총 대기 시간이 후보 수 개수에
   // 정비례해 늘어(수당 최대 700ms) 체감 지연의 핵심 원인이었다. depth·movetime(정확도)은 그대로
@@ -999,6 +1084,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       setMasterEmpty(emptyMaster);
       if (!active || !active.moves.length) { if (emptyMaster) setMoves(withExtra([])); return; }
       setPosGames(active.posTotal);
+      posCompleteRef.current = { key, complete: !active.master && !!active.complete };   // 보충 조회는 전체 DB를 쓰므로 전체 DB 목록일 때만
       const snapBy = Object.fromEntries(base.map((m) => [stripSuffix(m.san), m]));
       // (기능3) 새로 추가한 이론 수(addsFor)와 스냅샷에 원래 있던 이론 수를 구분하지 않는다 —
       // 둘 다 여기서 같은 "책 등록부"로 합쳐서 봄. 그렇지 않으면 dev가 추가한 수가 Lichess의
@@ -1180,14 +1266,16 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           if (!pv || !pv.uci || (pv.mate == null && pv.cp == null)) return;
           try {
             const san = uciToSan(liveBoard, pv.uci, liveColor);
-            if (san) evBy[stripSuffix(san)] = pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite };
+            // (v0.8.0) 탐색 도중의 값 — prov(임시) 표시: 등급·정렬은 바로 반영하되 수 키워드(LOW-LEVEL 등)는 확정 값만 쓴다
+            if (san) evBy[stripSuffix(san)] = pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate), prov: true } : { cp: pv.cp * baseWhite, prov: true };
           } catch { }
         });
-        if (Object.keys(evBy).length) setMoves((prev) => prev.map((m) => { const hit = evBy[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+        if (Object.keys(evBy).length) queueLive(key, evBy);
       };
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); applyDepthEvals(raw); };
       if (!cache.thr) cache.thr = [];
-      const mkThr = (fn) => { const f = throttled(fn, 120); cache.thr.push(f); return f; };
+      // (v0.8.0 렉 수정) 120ms 고정 throttle 대신 공용 박자(onTick)에 최신 값만 올린다 — 같은 박자의 다른 갱신과 한 번에 그려진다.
+      const mkThr = (fn) => { const id = {}; const f = (a) => onTick(id, () => fn(a)); f.cancel = () => tickRef.current.jobs.delete(id); cache.thr.push(f); return f; };
       const cancelThr = () => cache.thr.forEach((f) => f.cancel());
       const thrP = mkThr(onEvalProgress), thrS = mkThr(streamLines);
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
@@ -1200,6 +1288,59 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // depth보다 훨씬 큰 값(MAX_SEARCH_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
       // 멈추는 건 depth가 아니라 movetime(아래 세 단계의 시간 상한)이므로, 주어진 시간 안에서 depth가
       // 끝까지(더 이상 못 깊어질 때까지) 계속 늘어난다.
+      // (v0.8.0, 사용자 요청: 수 블록 평가치를 훨씬 빨리) 후보 수 평가 — 예전엔 ① 메인 탐색(0.7초)이 끝난 뒤에야 시작했고 ② 수마다 depth 15·최대 0.7초를
+      //  차례로 기다려 아래쪽 블록은 몇 초 뒤에야 숫자가 떴다. 이제 ① 이미 아는 후보 수(Lichess·스냅샷 목록)는 메인 탐색과 동시에 엔진 풀에서 바로 시작하고
+      //  ② 모든 수를 먼저 빠르게(depth 10·최대 120ms, 임시 값 prov) 한 번 훑어 숫자를 띄운 뒤 ③ 기존 정밀 평가(depth 15·최대 700ms)로 확정한다.
+      const mkLive = (ev2) => ev2.mate != null
+        ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
+        : { cp: ev2.cp * childWhite };
+      if (!cache.final) { cache.final = new Set(); cache.quick = new Map(); }
+      const needsEval = (m) => !m.live || !!m.live.prov;   // (v0.8.0) 탐색 도중의 임시 값만 받은 수도 확정 평가를 받아야 한다(BUG-207 후속)
+      const evalMoveList = async (list, workers, epoch) => {
+        if (!list.length || !workers.length) return;
+        const runPass = (quick) => {
+          let next = 0;
+          const run = async (w) => {
+            for (;;) {
+              if (cancelled) return;
+              const i = next++; if (i >= list.length) return;
+              const san = list[i], k = stripSuffix(san);
+              if (cache.final.has(k)) continue;
+              const fen = sansToFen([...sans, san]);
+              if (quick) {
+                // 이미 다른 실행(목록이 바뀌어 다시 돈 effect)이 물어본 수면 그 결과를 기다려 그대로 쓴다 — 건너뛰면 그 실행이 취소될 때 값이 버려져 숫자가 안 떴다
+                let q = cache.quick.get(k);
+                if (!q || q.epoch !== epoch) { q = { epoch, promise: w.evaluate(fen, 10, null, 120) }; cache.quick.set(k, q); }
+                const ev = await q.promise.catch(() => null);
+                if (!cancelled && ev && !cache.final.has(k)) queueLive(key, { [k]: { ...mkLive(ev), prov: true } });
+                continue;
+              }
+              // 정밀 평가 — 낮은 depth 결과부터 바로 반영(임시 값), 최종 depth에서 확정
+              const onMoveProgress = (partial) => { if (cancelled || !partial || cache.final.has(k)) return; queueLive(key, { [k]: { ...mkLive(partial), prov: true } }); };
+              // (버그 수정) 진행 중인 Promise를 수별로(워커 세대 epoch와 함께) 캐시해 재실행 사이 같은 수를 두 번 묻지 않는다. (v0.6.6) null이면 지우고 최대 3번까지 다시 묻는다.
+              let ev = null;
+              for (let attempt = 0; attempt < 3 && !ev && !cancelled; attempt++) {
+                const cached = cache.live.get(san);
+                if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(fen, 15, onMoveProgress, 700) });
+                ev = await cache.live.get(san).promise;
+                if (!ev) cache.live.delete(san);
+              }
+              if (cancelled || !ev || cache.final.has(k)) continue;   // 그 사이 엔진 상위 줄 값으로 확정됐으면 그 값을 유지(블록·엔진 라인 표시 일치)
+              cache.final.add(k);
+              queueLive(key, { [k]: mkLive(ev) });
+            }
+          };
+          return Promise.all(workers.map(run));
+        };
+        await runPass(true);
+        await runPass(false);
+      };
+      // ① 메인 탐색과 동시에 — 이미 아는 후보 수를 엔진 풀에서 바로(풀이 없으면 메인 엔진을 붙잡지 않도록 아래 순서를 따른다)
+      (async () => {
+        const pooled0 = await getLivePool();
+        if (cancelled || !pooled0.length) return;
+        await evalMoveList(moves.filter(needsEval).map((m) => m.san), pooled0, livePoolRef.current.epoch);
+      })().catch(() => { });
       if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, thrP, thrS, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
@@ -1222,6 +1363,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 아직 안 끝난 5초 심화 탐색은 evaluateMulti의 supersede로 자동 중단된다. moves.length 변화로
       // 이 effect가 같은 포지션에서 여러 번 재실행돼도(비이론 수 보충 등) posCacheRef에 시작 여부를
       // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
+      // (v0.8.0) 심화 탐색은 함수로 — 엔진 풀이 없는 기기(휴대폰 + 대형 신경망)에서는 메인 엔진 하나가 후보 수 평가까지 맡으므로,
+      //  5초 심화 탐색이 대기열 앞을 막아 수 블록 평가치가 5초 넘게 늦게 뜨던 문제가 있었다 — 그때는 후보 수 평가를 먼저 끝낸 뒤 시작한다.
+      const startDeep = () => {
       if (cache.extraKey !== key) {
         cache.extraKey = key;
         engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, thrP, thrS, "learn-lines").then((deepPvs) => {
@@ -1233,7 +1377,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           if (deepLines.length) {
             const deepEvBySan = {};
             deepLines.forEach((l) => { if (l.sans && l.sans.length) deepEvBySan[stripSuffix(l.sans[0])] = l.ev; });
-            setMoves((prev) => prev.map((m) => { const hit = deepEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+            queueLive(key, deepEvBySan, true);
           }
           // (v0.2.9 기능) 사용자 요청 — 세 번째 단계("third movetime")를 추가한다. 5초 심화 탐색이 끝난
           // 뒤에도 사용자가 이 포지션에 그대로 머물러 있다면, 같은 slot으로 한 번 더(이번엔 20초) 이어서
@@ -1250,12 +1394,16 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
               if (deeperLines.length) {
                 const deeperEvBySan = {};
                 deeperLines.forEach((l) => { if (l.sans && l.sans.length) deeperEvBySan[stripSuffix(l.sans[0])] = l.ev; });
-                setMoves((prev) => prev.map((m) => { const hit = deeperEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+                queueLive(key, deeperEvBySan, true);
               }
             }).catch(() => {});
           }
         }).catch(() => {});
       }
+      };
+      const pooled = await getLivePool();
+      if (cancelled) return;
+      if (pooled.length) startDeep();
       setLinesPending(false);
       // 비이론 수 9개 보장: 엔진 평가 상위 수로 보충.
       let cur = moves;
@@ -1270,7 +1418,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         const lineEvBySan = {};
         lines.forEach((l) => { if (l.sans && l.sans.length) lineEvBySan[stripSuffix(l.sans[0])] = l.ev; });
         cur = cur.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; });
-        setMoves((prev) => prev.map((m) => { const hit = lineEvBySan[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+        Object.keys(lineEvBySan).forEach((k) => cache.final.add(k));   // (v0.8.0) 엔진 상위 줄과 겹치는 수는 이 값으로 확정 — 먼저 시작한 개별 평가가 늦게 와도 덮지 않는다
+        queueLive(key, lineEvBySan, true);
       }
       const curNonbook = () => cur.filter((m) => !m.book).length;
       if ((!isMaster || masterEmpty) && curNonbook() < 9) {
@@ -1304,62 +1453,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           }
         }
       }
-      // (성능) moves.length가 늘어 이 effect가 재실행되어도, 이전 실행에서 이미 live 평가를 받은
-      // 수는 다시 계산하지 않고 새로 추가된(아직 live가 없는) 수만 평가한다.
-      const list = cur.filter((m) => m.live == null).map((m) => m.san);
-      if (list.length) {
-        const mkLive = (ev2) => ev2.mate != null
-          ? { mate: ev2.mate * childWhite, win: (ev2.mate > 0) === (childWhite === 1) ? "w" : "b", plies: matePliesOf(ev2.mate) }
-          : { cp: ev2.cp * childWhite };
-        // (성능) 후보 수마다 depth 15/movetime 700ms 상한은 그대로(정확도 손실 없음) — 예전엔 이
-        // 목록을 한 번에 하나씩 순서대로 물어봐 후보 수 개수에 정비례해 총 시간이 늘었다. 게임
-        // 리뷰(analyzeGame)와 동일한 work-stealing 패턴으로, 독립된 워커 여러 개가 같은 목록에서
-        // 하나씩 꺼내 동시에 처리하게 해 총 계산량은 그대로 두고 벽시계 시간만 줄인다.
-        const pooled = await getLivePool();
-        if (cancelled) return;
-        const epoch = livePoolRef.current.epoch;
-        const workers = pooled.length ? pooled : [engine];
-        let nextIdx = 0;
-        const runWorker = async (w) => {
-          for (;;) {
-            if (cancelled) return;
-            const i = nextIdx++; if (i >= list.length) return;
-            const san = list[i];
-            // (기능1) 이 수는 낮은 depth 결과부터 즉시 반영 → 등급/정렬이 계산 도중 자연스럽게
-            // 갱신되며 "엔진이 계산하며 평가를 수정하는" 과정이 시각적으로 보인다. 최종 depth에서
-            // 한 번 더 확정. (20차) mate===0(그 수로 체크메이트 완성)일 때 부호가 사라지므로 win으로
-            // 승자를 함께 보존한다.
-            const onMoveProgress = (partial) => {
-              if (cancelled || !partial) return;
-              setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(partial) } : x));
-              // (v0.2.4 버그 수정) 이 후보 수 개별 평가는 여전히 depth 15 고정이다(즉각 반응 유지 목적,
-              // 건드리지 않기로 함) — 그 depth를 "?" 도움말의 curDepth에 함께 반영하면, 후보 수가
-              // 많아 이 depth-15 검색들이 자주 완료돼 값을 15로 계속 밀어붙이는 바람에, 정작 depth
-              // 20을 목표로 하는 메인 검색(onEvalProgress)의 실제 진행 상황이 15에서 멈춘 것처럼
-              // 가려 보였다. 도움말은 메인 검색 하나만의 진행률을 보여줘야 하므로 여기서는 bumpDepth
-              // 를 부르지 않는다.
-            };
-            // (버그 수정) 위의 be/pvs와 같은 이유로, 재실행 사이의 경합으로 같은 수를 두 번
-            // 물어보는 걸 막기 위해 진행 중인 Promise를 수(san)별로 캐시한다. 다만 이 캐시가 "지금
-            // 이 워커 세대(epoch)"에 걸린 것인지도 함께 저장한다 — 그 사이 엔진 프로필이 바뀌어
-            // 캐시된 Promise를 만든 워커가 이미 terminate됐다면(다시는 bestmove가 안 옴) 그 낡은
-            // Promise를 계속 기다리는 대신 버리고 지금 풀로 재요청해야, 이 수의 평가가 영영 안
-            // 뜨는 채로 멈추지 않는다.
-            // (v0.6.6 버그 수정) 수 블록의 아이콘·평가치가 가끔 영영 안 뜨던 문제 — 엔진이 시간 초과 등으로 null을 돌려주면 그 null Promise가 캐시에 남아 이후 재실행도
-            // 같은 null을 그대로 받아, 그 수는 평가를 다시 요청하지 못했다. 실패하면 캐시를 지우고 최대 3번까지 다시 요청한다.
-            let ev = null;
-            for (let attempt = 0; attempt < 3 && !ev && !cancelled; attempt++) {
-              const cached = cache.live.get(san);
-              if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
-              ev = await cache.live.get(san).promise;
-              if (!ev) cache.live.delete(san);
-            }
-            if (cancelled || !ev) continue;
-            setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
-          }
-        };
-        await Promise.all(workers.map(runWorker));
-      }
+      // (성능) moves.length가 늘어 이 effect가 재실행되어도 이미 확정 평가를 받은 수는 다시 계산하지 않는다(cache.final). 독립된 워커 여러 개가
+      //  같은 목록에서 하나씩 꺼내 동시에 처리한다(work-stealing). 풀이 없으면 메인 엔진 하나로 하고, 끝난 뒤 심화 탐색을 시작한다.
+      const list = cur.filter(needsEval).map((m) => m.san);
+      await evalMoveList(list, pooled.length ? pooled : [engine], livePoolRef.current.epoch);
+      if (!pooled.length && !cancelled) startDeep();
     })();
     return () => { cancelled = true; };
   }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty, kick]);
@@ -1390,8 +1488,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
     if (kwPoolRef.current.key !== key) kwPoolRef.current = { key, by: new Map() };
-    uniq.forEach((m) => { if (moverEval(m, ply) != null) kwPoolRef.current.by.set(stripSuffix(m.san), m); });
-    let t = assignTiers(uniq, ply, board, key, sans, [...kwPoolRef.current.by.values()]).map((m) => {
+    // (v0.8.0, 사용자 요청: 최선·좋은 수에 LOW-LEVEL) 키워드 비교 묶음에는 확정 평가만 — 엔진이 낮은 depth에서 보내는 임시 값(live.prov)은 크게 흔들려
+    //  최선 수도 "최선보다 1.5 이상 나쁨"으로 판정됐다. 라이브 분석 중에는 정적 스냅샷 평가(다른 엔진·depth)도 섞지 않는다. 임시 값으로 덮인 수는 묶음의 마지막 확정 값을 쓴다.
+    const liveKw = liveOn && engine && engine.status === "ready";
+    uniq.forEach((m) => { if (kwSettled(m, liveKw) && moverEval(m, ply) != null) kwPoolRef.current.by.set(stripSuffix(m.san), m); });
+    let t = assignTiers(uniq, ply, board, key, sans, [...kwPoolRef.current.by.values()], { liveOnly: liveKw }).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
       const nm = nameOverride(key, m.san);
       return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), disp: decorateSan(board, m.san, color) };
@@ -1429,7 +1530,23 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   statPumpRef.current = () => {
     if (!liveOn || !statMountedRef.current) return;
     const myKey = statKeyRef.current;
-    const need = tiled.filter((m) => m.games == null && !statDoneRef.current.has(myKey + "|" + m.san));
+    // (v0.8.0 버그 수정) 포지션이 막 바뀐 직후엔 수 목록(moves)이 아직 이전 포지션의 것이라, 새 수순 뒤에 붙이면 둘 수 없는 수순을 물어봤다(호출 한도만 소모).
+    //  지금 포지션에서 실제로 둘 수 있는 수만 조회한다.
+    const legalHere = (san) => {   // sanSrc는 칸까지 갈 수 있는지만 보므로(자기 기물 칸도 통과) 실제 합법 도착 칸(legalDests)까지 확인한다
+      try {
+        const info = sanSrc(board, san, color); if (!info) return false; if (info.castle) return true;
+        return legalDests(board, info.from[0], info.from[1], color, null).some(([r, c]) => r === info.to[0] && c === info.to[1]) || (info.piece === "P" && info.isCap && !board[info.to[0]][info.to[1]]);   // 앙파상은 그대로 둔다
+      } catch { return false; }
+    };
+    const need = tiled.filter((m) => m.games == null && !statDoneRef.current.has(myKey + "|" + m.san) && legalHere(m.san));
+    // (v0.8.0, 사용자 요청: 수 블록 통계를 빨리) 이 포지션의 전체 통계 목록이 빠짐없으면(posCompleteRef) 목록에 없는 수는 아무도 두지 않은 수 — 0판으로 바로 채운다.
+    //  예전엔 엔진이 보탠 수마다 다음 포지션 통계를 따로 물어(포지션당 최대 9건) 서버 호출 한도(IP당 분당 90회)에 걸려 대기·재시도가 생겼다.
+    if (need.length && posCompleteRef.current.key === myKey && posCompleteRef.current.complete) {
+      const zero = new Set(need.map((m) => m.san));
+      need.forEach((m) => statDoneRef.current.add(myKey + "|" + m.san));
+      setMoves((prev) => prev.map((x) => zero.has(x.san) && x.games == null ? { ...x, games: 0, adopt: 0 } : x));
+      return;
+    }
     while (statInflightRef.current < STAT_CONCURRENCY && need.length) {
       const m = need.shift();
       statDoneRef.current.add(myKey + "|" + m.san);
@@ -1444,7 +1561,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     // 화면에 필요한 통계가 모두 끝났으면, 다음에 눌릴 가능성이 높은 상위 4수의 다음 포지션을 미리 캐시에 채운다.
     if (!need.length && statInflightRef.current === 0 && statPrefetchedRef.current !== myKey && posGames != null) {
       statPrefetchedRef.current = myKey;
-      [...tiled].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4).forEach((m) => { fetchLichess([...sans, m.san], isMaster).catch(() => { }); });
+      // (v0.8.0) 많이 둔 4수 + 엔진이 높게 본 2수(보드에서 직접 두기 쉬운 수)의 다음 포지션 통계를 미리 받는다(호출 한도를 아끼려 지금 기준 하나만)
+      const byGames = [...tiled].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4);
+      const byEval = tiled.filter((m) => m.live && !m.live.prov).sort((a, b) => moverEval(b, ply) - moverEval(a, ply)).slice(0, 2);
+      [...new Set([...byGames, ...byEval].map((m) => m.san))].filter(legalHere).forEach((san) => { fetchLichess([...sans, san], isMaster).catch(() => { }); });
     }
   };
   useEffect(() => { statPumpRef.current(); }, [statOrder, key, liveOn, posGames, statsLoading]);
@@ -1636,6 +1756,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   // 이 수가 실제로 두어진 마스터 대국(대국자/레이팅/결과) — 목록에서 클릭하면 그 대국의 마지막 포지션을 연다.
   const [masterGames, setMasterGames] = useState([]);
   const [masterStats, setMasterStats] = useState(null);   // (v0.6.6) Lichess 마스터 DB 전체 승·무·패 + 많이 둔 다음 수
+  const [masterSample, setMasterSample] = useState(null);   // (v0.8.0) 대국이 많아 대표 대국만 보일 때 { shown, total }
   const [loadingMasterGames, setLoadingMasterGames] = useState(false);
   // (버그 수정) fetch가 실패해도(네트워크 오류 등) masterGames가 그냥 빈 배열([])로 남아, "결과가
   // 없다"는 메시지와 "요청이 실패했다"는 상황을 화면에서 구분할 수 없었다 — 별도 에러 상태를 둬서
@@ -1643,11 +1764,11 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const [masterGamesError, setMasterGamesError] = useState(false);
   const [masterRetry, setMasterRetry] = useState(0);
   useEffect(() => {
-    setMasterGames([]); setMasterStats(null); setLoadingMasterGames(false); setMasterGamesError(false);
+    setMasterGames([]); setMasterStats(null); setMasterSample(null); setLoadingMasterGames(false); setMasterGamesError(false);
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchAllMasterGames([...sans, san]).then((res) => { if (!cancelled) { setMasterGames(res.games); setMasterStats(res.stats); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
+    fetchAllMasterGames([...sans, san]).then((res) => { if (!cancelled) { setMasterGames(res.games); setMasterStats(res.stats); setMasterSample(res.sample ? { shown: res.games.length, total: res.total } : null); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
@@ -1655,7 +1776,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     editKey, devEdit, setDevEdit, nameDraft, setNameDraft,
     openDevEdit, saveMeta, toggleUnbook, isPunishable, curated, stats,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
-    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
+    masterGames, masterStats, masterSample, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
@@ -2355,7 +2476,6 @@ function useExplorerGames(active, path) {
   }, [active, key, retry]);
   return { ...st, retry: () => { explorerCache.delete(key); setRetry((n) => n + 1); } };
 }
-const explorerSpeedLabel = (sp) => (sp === "ultraBullet" ? t("울트라불릿") : sp === "bullet" ? t("불릿") : sp === "blitz" ? t("블리츠") : sp === "rapid" ? t("래피드") : sp === "classical" ? t("클래시컬") : sp === "correspondence" ? t("통신") : sp);
 // (v0.7.9) 전체 통계 대국의 기보 — 서버가 저장한 PGN(처음엔 Lichess에서 받아 검증·저장). 같은 대국은 이 탭 안에서 다시 묻지 않는다.
 const explorerPgnCache = new Map();   // id → Promise<string[]>(SAN 수순)
 function fetchExplorerSans(id) {
@@ -2368,7 +2488,7 @@ function fetchExplorerSans(id) {
   return p;
 }
 // 대국 행 — 마스터 통계 행과 같은 구조(두 선수 줄·왕관·결과, 날짜·시간 규정 줄, 보기·리뷰 버튼, 누르면 기보 펼침). 레이팅만 숨긴다.
-function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onReview }) {
+function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onReview, err }) {
   const [sans, setSans] = useState(null);   // null | "loading" | "error" | string[]
   useEffect(() => {
     if (!expanded || Array.isArray(sans) || sans === "loading") return;
@@ -2376,7 +2496,7 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
     fetchExplorerSans(g.id).then((x) => { if (!off) setSans(x); }, () => { if (!off) setSans("error"); });
     return () => { off = true; };
   }, [expanded]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const meta = [g.month ? g.month.replace("-", ".") : null, g.speed ? explorerSpeedLabel(g.speed) : null].filter(Boolean).join(", ");
+  const meta = g.month ? g.month.replace("-", ".") : "";   // (v0.8.0, 사용자 요청) 유저 통계에는 타임 컨트롤(속도)을 표시하지 않는다
   return (
     <>
       <div onClick={onToggle} role="button" aria-expanded={expanded} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: dim ? 0.5 : 1 }}>
@@ -2395,6 +2515,8 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
           <BestMoveJumpButton onClick={() => onReview()} disabled={!!busy || dim} />
         </div>
       </div>
+      {/* (v0.8.0, 사용자 요청: 유저 통계 버튼이 작동하지 않는 것처럼 보임) 실패 안내를 카드 맨 아래가 아니라 누른 줄 바로 아래에 */}
+      {err && <p role="alert" style={{ fontSize: 11.5, color: T.blunder, margin: "0 0 6px" }}>{err === "review" ? t("리뷰 열기 실패. 잠시 후 다시 시도") : t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
       {expanded && (
         <div style={{ margin: "0 0 6px" }}>
           {sans === "loading" || sans == null ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("기보 불러오는 중…")}</span>
@@ -2405,7 +2527,7 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
     </>
   );
 }
-function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview }) {
+function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview, errFor }) {
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [games]);
   if (!games.length) return null;
@@ -2415,7 +2537,7 @@ function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, 
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{title}</div>
       {games.slice(page * EXPLORER_PAGE, (page + 1) * EXPLORER_PAGE).map((g) => (
         <ExplorerGameRow key={g.id} g={g} ply={ply} expanded={expandedId === g.id} onToggle={() => setExpandedId((v) => (v === g.id ? null : g.id))}
-          busy={busyId === g.id ? busyKind : null} dim={!!busyId && busyId !== g.id} onOpen={(atPly) => onOpen(g, atPly)} onReview={() => onReview(g)} />
+          busy={busyId === g.id ? busyKind : null} dim={!!busyId && busyId !== g.id} onOpen={(atPly) => onOpen(g, atPly)} onReview={() => onReview(g)} err={errFor ? errFor(g.id) : null} />
       ))}
       <ListPager page={page} setPage={setPage} pageCount={pageCount} />
     </div>
@@ -2425,7 +2547,7 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
   const { loading, data, error, retry } = useExplorerGames(true, path);
   const [expandedId, setExpandedId] = useState(null);
   const [busy, setBusy] = useState({ id: null, kind: null });
-  const [openErr, setOpenErr] = useState(null);   // null | "open" | "review"
+  const [openErr, setOpenErr] = useState(null);   // null | { id, kind: "open" | "review" }
   useEffect(() => { setExpandedId(null); setOpenErr(null); }, [path.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
   const games = useMemo(() => (data && data.games ? data.games : []).map((g) => {
     const m = /^(\d{4})-(\d\d)$/.exec(g.month || "");
@@ -2442,11 +2564,11 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
   const run = async (g, kind, fn) => {
     if (busy.id) return;
     setBusy({ id: g.id, kind }); setOpenErr(null);
-    try { await fn(await fetchExplorerSans(g.id)); } catch { setOpenErr(kind); } finally { setBusy({ id: null, kind: null }); }
+    try { await fn(await fetchExplorerSans(g.id)); } catch { setOpenErr({ id: g.id, kind }); } finally { setBusy({ id: null, kind: null }); }
   };
   const open = (g, atPly) => run(g, "open", (sans) => onOpenGame && onOpenGame(sans, atPly));
   const review = (g) => run(g, "review", (sans) => onOpenReview && onOpenReview({ moves: sans, white: { username: g.white.name, rating: null }, black: { username: g.black.name, rating: null } }));
-  const sectionProps = { ply, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review };
+  const sectionProps = { ply, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review, errFor: (id) => (openErr && openErr.id === id ? openErr.kind : null) };
   return (
     <div style={{ marginTop: 12, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
       <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("전체 통계")}</div>
@@ -2459,8 +2581,6 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
             <>
               <ExplorerGameSection title={t("추천 대국")} games={topGames} {...sectionProps} />
               <ExplorerGameSection title={t("최근 대국")} games={recentGames} {...sectionProps} />
-              {openErr === "open" && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
-              {openErr === "review" && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
             </>
           ))}
         </>
@@ -2547,22 +2667,12 @@ function StatsFilterRows({ rows }) {
 const MY_RESULT_WINNER = (g) => (g.result === "win" ? (g.color === "w" ? "white" : "black") : g.result === "loss" ? (g.color === "w" ? "black" : "white") : null);
 const adaptMyGame = (g) => { const d = g.endTime ? new Date(g.endTime * 1000) : null; return { ...g, _orig: g, winner: MY_RESULT_WINNER(g), year: d ? d.getFullYear() : 0, _month: d ? d.getFullYear() * 12 + d.getMonth() : 0 }; };
 const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => Math.floor(k / 12) + "." + String((k % 12) + 1).padStart(2, "0") };   // 2026.07
-// 시간 규정 표기 — "900+10"(chess.com)·"600-10"(OpenChess)을 "15+10"으로. 하루 단위("1/86400")는 "일일". 알 수 없으면 null.
-function fmtTimeControl(raw) {
-  const str = String(raw || "");
-  if (/^1\/\d+$/.test(str)) return t("일일");
-  const m = /^(\d+)[+-](\d+)$/.exec(str) || /^(\d+)$/.exec(str);
-  if (!m) return null;
-  const base = +m[1] / 60;
-  return (Number.isInteger(base) ? base : +base.toFixed(1)) + "+" + (m[2] || 0);
-}
 // 내 대국 한 줄 — 마스터 통계 대국 줄과 같은 모양(백·흑 줄 + 오른쪽 결과, 아래 줄 날짜, 오른쪽 보기·리뷰 버튼). 결과 글자 색만 내 승패 기준이다.
 function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
   const won = g.result === "win", lost = g.result === "loss";
   const dateTxt = g.endTime ? (() => { const d = new Date(g.endTime * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); })() : "";
   const orig = g._orig || g;
-  const fmt = fmtTimeControl(g.timeControl), cls = g.timeClass ? (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : "";
-  const tcTxt = fmt ? fmt + (cls ? " (" + cls + ")" : "") : cls;   // 15+10 (래피드)
+  // (v0.8.0, 사용자 요청) 유저 통계 대국 줄에는 타임 컨트롤(15+10 (래피드) 등)을 표시하지 않는다 — 날짜와 결과만
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6" }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -2573,7 +2683,7 @@ function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
           </div>
           <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
         </div>
-        <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{tcTxt ? ", " + tcTxt : ""}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
+        <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
       </div>
       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
         <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -2592,7 +2702,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, openDevEdit, saveMeta, toggleUnbook, isPunishable, curated,
     stats, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
-    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
+    masterGames, masterStats, masterSample, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
   // (v0.6.6, 사용자 요청) 집중 분석 안에서 지나온 경로 기록 — 가장 멀리 본 수순을 기보로 남기고, 수를 눌러 그 시점으로 이동한다. 새 수를 열면 그 수순으로 이어지고(되돌아간 뒤 다른 수를 열면 그 갈래로 바뀐다), 이전 수순 안의 수로 가면 기록은 그대로다.
@@ -2664,12 +2774,29 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   // 유저 통계·마스터 통계의 첫 대국 줄이 같은 y좌표에서 시작하도록, 더 위에 있는 쪽 기준으로 아래쪽 페이지에 여백을 넣는다(매 렌더 뒤 한 번 재서 바뀐 만큼만 반영).
   const spUser = useRef(null), spMaster = useRef(null), padsRef = useRef([0, 0]);
   const [pads, setPads] = useState([0, 0]);
-  useLayoutEffect(() => {
-    const els = [spUser.current, spMaster.current];
-    if (!els[0] || !els[1]) return;
-    const nat = els.map((el) => { const pg = el.closest("[data-fp-page]"); return pg ? el.getBoundingClientRect().top - pg.getBoundingClientRect().top : 0; });   // 여백 칸의 위쪽 = 여백을 넣기 전 대국 목록의 시작 높이
+  // (v0.8.0 렉 수정, check-render-perf) 예전엔 매 렌더 뒤 위치를 바로 읽어(강제 레이아웃) 엔진 갱신마다 레이아웃을 한 번 더 계산했다.
+  //  이제 두 페이지·여백 칸의 크기가 바뀔 때만(ResizeObserver 알림 = 레이아웃이 끝난 뒤) 다시 잰다. 관찰 대상이 바뀌면 다시 건다.
+  const padObsRef = useRef({ els: [null, null], ro: null });
+  useEffect(() => () => { const o = padObsRef.current; if (o.ro) o.ro.disconnect(); }, []);
+  useEffect(() => {
+    const els = [spUser.current, spMaster.current], o = padObsRef.current;
+    if (els[0] === o.els[0] && els[1] === o.els[1]) return;
+    if (o.ro) { o.ro.disconnect(); o.ro = null; }
+    o.els = els;
+    if (!els[0] || !els[1] || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const nat = els.map((el) => { const pg = el.closest("[data-fp-page]"); return pg ? el.getBoundingClientRect().top - pg.getBoundingClientRect().top : 0; });   // 여백 칸의 위쪽 = 여백을 넣기 전 대국 목록의 시작 높이
     const target = Math.max(nat[0], nat[1]), next = [Math.round(target - nat[0]), Math.round(target - nat[1])];
     if (next[0] !== padsRef.current[0] || next[1] !== padsRef.current[1]) { padsRef.current = next; setPads(next); }
+    };
+    o.ro = new ResizeObserver(measure);
+    // 여백 칸 위에 있는 내용(같은 페이지 안의 앞 형제들, 조상 쪽 앞 형제들)의 크기가 바뀌면 여백 칸의 높이(위치)가 바뀌므로 그것들을 관찰한다
+    //  (페이지 자체는 가로 flex에서 가장 긴 페이지 높이로 늘어나 있어 내용이 바뀌어도 크기가 안 바뀔 수 있다).
+    els.forEach((el) => {
+      o.ro.observe(el);   // 처음 한 번 재기(관찰을 시작하면 알림이 한 번 온다)
+      const pg = el.closest("[data-fp-page]"); let x = el, n = 0;
+      while (x && x !== pg && n < 60) { for (let sib = x.previousElementSibling; sib && n < 60; sib = sib.previousElementSibling, n++) o.ro.observe(sib); x = x.parentElement; }
+    });
   });
   const MY_GAMES_PAGE_SIZE = 10;
   const [myGamesPage, setMyGamesPage] = useState(0);
@@ -2889,6 +3016,10 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         ]} />}
         {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
             포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
+        {/* (v0.8.0) 1.e4처럼 대국이 아주 많은 수순은 휴대폰에서도 바로 뜨도록 연대별 고레이팅 대표 대국만 받는다(통계 숫자는 전체 기준) */}
+        {masterSample && (
+          <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{t("대국이 많아 연대별 대표 대국 {0}판만 표시. 전체 {1}판", masterSample.shown.toLocaleString(), masterSample.total.toLocaleString())}</div>
+        )}
         {masterGames.length > 1 && (
           <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
             <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
@@ -3025,17 +3156,22 @@ function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 40 })
   const [open, setOpen] = useState(false), [over, setOver] = useState(false);
   const ref = useRef(null);
   useEffect(() => { setOpen(false); }, [resetKey]);
-  useLayoutEffect(() => {
-    const el = ref.current; if (!el || open) return undefined;
-    const check = () => setOver(el.scrollHeight > el.clientHeight + 1);
-    check();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(check); ro.observe(el);
+  // (v0.8.0 렉 수정) 넘침 검사는 ResizeObserver 알림 안에서만 한다 — 안쪽 글 상자(inner)의 실제 높이가 바뀔 때만 알림이 오고,
+  //  알림은 브라우저가 레이아웃을 마친 뒤라 강제 레이아웃이 없다. 예전엔 children(매번 새 JSX)을 의존성으로 둔 layout effect에서
+  //  scrollHeight를 읽어, 분석 탭이 엔진 갱신으로 다시 그려질 때마다 레이아웃을 강제로 다시 계산했다(휴대폰 렉의 한 원인).
+  const innerRef = useRef(null);
+  useEffect(() => {
+    const inner = innerRef.current;
+    if (!inner) return undefined;
+    const limit = lines * lineH + 1;
+    if (typeof ResizeObserver === "undefined") { setOver(inner.offsetHeight > limit); return undefined; }
+    const ro = new ResizeObserver((entries) => { const e = entries[entries.length - 1]; setOver(e.contentRect.height > limit); });
+    ro.observe(inner);
     return () => ro.disconnect();
-  }, [children, resetKey, open]);
+  }, [lines, lineH]);
   return (
     <div style={{ position: "relative", paddingRight: padRight }}>
-      <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}>{children}</p>
+      <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}><span ref={innerRef} style={{ display: "block" }}>{children}</span></p>
       {!open && over && (
         <button onClick={() => setOpen(true)} className="press" style={{ position: "absolute", right: padRight, bottom: 0, height: lineH, paddingLeft: 22, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap", color: T.ink, background: "linear-gradient(to right, rgba(247,240,222,0), " + T.paper + " 22px)" }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: "#9A8F7C" }}>{t("자세히 보기")}</span>
@@ -3106,7 +3242,9 @@ function MoveTileWindow({ enabled, resetKey, children }) {
     <div style={{ position: "relative" }}>
       <BrassScrollStyle />
       <div ref={ref} className="oc-tile-window oc-brass-scroll" onScroll={(e) => { const el = e.currentTarget; setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2); }}
-        style={{ position: "relative", maxHeight: maxH != null ? maxH : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", ...BRASS_SCROLLBAR, marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0 }}>
+        // (v0.8.0, 사용자 요청) 스크롤 상자 안에서 첫 수 블록의 퀘스트 배지(블록 왼쪽 위로 8px 튀어나옴)가 잘려 보이지 않던 문제 — 위·왼쪽에 여백을 두고 그만큼 바깥으로 당긴다
+        style={{ position: "relative", maxHeight: maxH != null ? maxH + 10 : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", ...BRASS_SCROLLBAR, marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0,
+          ...(maxH != null ? { marginTop: -10, paddingTop: 10, marginLeft: -10, paddingLeft: 10 } : null) }}>
         {children}
       </div>
       <MoreBelowHint show={maxH != null && !atEnd} />
@@ -3669,6 +3807,9 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
   // 보드 상단 SequenceBar에 그 대국의 전체 기보가 표시되도록 sans를 그 대국의 전체 수순으로 교체한다.
+  // (v0.8.0, 사용자 요청: 유저 통계 "대국 보기"가 작동하지 않는 것처럼 보임) 집중 분석을 닫고 대국을 연 뒤, 분석 탭을 아래로 내려 둔 상태라도
+  //  보드가 보이게 스크롤한다 — 예전엔 보드가 화면 밖에 있으면 아무 일도 일어나지 않은 것처럼 보였다.
+  const revealBoard = () => { requestAnimationFrame(() => requestAnimationFrame(() => { try { const el = document.querySelector("[data-analysis-board]"); if (el) { const r = el.getBoundingClientRect(); if (r.top < 60 || r.bottom > window.innerHeight) el.scrollIntoView({ behavior: "smooth", block: "start" }); } } catch { } })); };
   const onOpenMasterGame = async (gameId, atPly) => {
     const gameSans = await fetchAnyMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
     if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
@@ -3677,6 +3818,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     // (v0.6.6) atPly(그 대국에서 n번째 수까지)가 오면 거기까지 진행된 상태로 연다 — 이 수 직후 진행 미리보기에서 고른 수.
     const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
+    revealBoard();
   };
   // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 분석 보드는 그대로
   // 두고, 그 대국의 전체 기보를 곧장 /review로 넘긴다. Lichess 마스터 DB의 white/black은 {name,rating}
@@ -3696,6 +3838,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     if (!gameSans || !gameSans.length) return;
     const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
+    revealBoard();
   };
   // (v0.2.0 기능) "게임 리뷰" — 예전엔 대국을 분석 보드에 불러오며 즉석 분석 모드(AnalysisModal)를
   // 자동으로 열었는데, 이제 결과·상대·타임클래스 같은 대국 메타데이터까지 갖춘 전용 /review
@@ -3724,7 +3867,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
   // (v0.7.6) 블록을 거치지 않고 도달했으면(기보 이동 등) 직전 포지션에서 같은 자동 규칙으로 계산한다(평가·채택률을 모르면 그 조건만 건너뜀).
-  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? (curMove.allAdopt !== undefined ? curMove.allAdopt : curMove.adopt) : null }) : []);
+  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), ply: sans.length - 1, adopt: curMove ? (curMove.allAdopt !== undefined ? curMove.allAdopt : curMove.adopt) : null }) : []);
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
@@ -3779,18 +3922,12 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
       {/* (v0.2.0 기능) 엔진이 이 포지션의 후보 수(수 블록)를 계산하는 동안 마스코트 안내를
           보여준다 — linesPending은 이미 "새 엔진 결과를 기다리는 중"을 정확히 추적하고
           있던 플래그라 그대로 재사용한다. */}
-      {linesPending && (
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-          <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
-          <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{tx("{0} 수 계산 중", ply % 2 === 0 ? "MILKU" : "KOKOA")}</span>
-        </div>
+      {/* (v0.8.0, 사용자 요청) 계산 중 안내 — 방금 둔 수의 진영 코치(백 MILKU · 흑 KOKOA). 첫 위치에서는 MILKU. 수 블록이 아직 없으면 목록 자리를 채우는 큰 상자,
+          이미 있으면 그 위의 낮은 상자. 수를 더 둘 수 없는 포지션(메이트·스테일메이트)에는 띄우지 않는다. */}
+      {(linesPending || moves.length === 0) && legalMoveCount > 0 && (
+        <CoachThinkingBox coach={sans.length === 0 && !fenRoot ? "milku" : color === "w" ? "kokoa" : "milku"} compact={moves.length > 0} />
       )}
-      {moves.length === 0 ? (
-        <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
-          <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>{t("제안된 수 없음. 보드에서 직접 두면 평가 후 블록으로 추가")}</p>
-        </div>
-      ) : (() => {
+      {moves.length === 0 ? null : (() => {
         const bk = moves.filter((m) => m.book);
         const nb = moves.filter((m) => !m.book);
         // (v0.6.6, 사용자 요청) 더보기·접기 없이 표시할 수 있는 수 블록을 항상 전부 보여준다.
@@ -3889,7 +4026,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
               씩)만큼 음수 마진으로 "흘러넘쳐" 카드 테두리까지 꽉 채우고, lg 이상(보드+다음 수 목록이
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
-          <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
+          <div ref={boardRef} data-analysis-board="" className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84, scrollMarginTop: 72 }}>
             <BoardWithMaterial board={board} endFx={drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} startColor={startColor} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
             {promoPrompt && (
@@ -3901,7 +4038,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <NavBtn size={46} onClick={() => setFlip((v) => !v)} active={flip} label={t("보드 뒤집기")}><ArrowUpDown size={19} /></NavBtn>
-              <NavBtn size={46} onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={18} /></NavBtn>
+              <NavBtn size={46} onClick={reset} disabled={!sans.length || !!focus} label={t("초기화")}><RotateCcw size={18} /></NavBtn>
             </div>
             {/* (사용자 요청) 봇과 직접 대국을 시작하는 PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·
                 초기화·뒤로·앞으로)과 같은 줄, 가운데에 작게 둔다. 전용 페이지(/play)를 새 히스토리
@@ -3914,8 +4051,8 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
                 있거나 sans에 이미 둔 수가 있으면) 이 버튼 자체를 비활성화하고 항상 빈 sans만 넘긴다. */}
             {/* (v0.6.6, 사용자 요청) PLAY 버튼 제거 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={19} /></NavBtn>
-              <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={19} /></NavBtn>
+              <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus} label={t("이전 수")}><ChevronLeft size={19} /></NavBtn>
+              <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus} label={t("다음 수")}><ChevronRight size={19} /></NavBtn>
             </div>
           </div>
         </div>

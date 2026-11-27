@@ -1,4 +1,4 @@
-// (v0.6.3) 마스터 대국 DB(public/master-games.json)의 event 문자열을 도감 대회(src/data/chessTournaments.js)에 연결하는 규칙.
+// (v0.6.3) 마스터 대국 DB(data/master-games.json)의 event 문자열을 도감 대회(src/data/chessTournaments.js)에 연결하는 규칙.
 // DB는 대회명이 일관되지 않고(서로 다른 event 17,969개) 표기가 대회·연도마다 달라, 대회마다 포함(include)·제외(exclude) 정규식과 연도 범위를 둔다.
 // 제외 규칙의 핵심: 같은 이름이 들어간 블리츠·속기·챌린저스·오픈·여자부·하위 그룹(B·C)은 본 대회로 세지 않는다.
 const NOT_MAIN = /blitz|rapid|armageddon|\btb\b|play-?in|prelim|women|girls|\bu\d\d\b|youth|junior|senior|online|internet|simul|blindfold/i;

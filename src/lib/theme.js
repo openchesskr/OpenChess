@@ -197,25 +197,15 @@ export function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(
 // 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미
 // 하나의 이미지 안에 함께 표현되어 있다. 그랜드마스터는 구간이 없어 대표 이미지 하나만 쓴다.
 export const TIER_IMAGE = {
-  iron: "/iron-pawn.png",
-  bronze: "/bronze-knight.png",
-  silver: "/silver-bishop.png",
-  gold: "/gold-rook.png",
-  diamond: "/diamond-queen.png",
-  master: "/master-king.png",
+  iron: "/iron-pawn.webp",
+  bronze: "/bronze-knight.webp",
+  silver: "/silver-bishop.webp",
+  gold: "/gold-rook.webp",
+  diamond: "/diamond-queen.webp",
+  master: "/master-king.webp",
   grandmaster: "/gm.png",
 };
-// (v0.1.3 기능) 여정 지도를 스크롤하며 지나는 티어(아이언·브론즈…)마다 그 느낌에 맞는 세로로 긴
-// 배경 이미지를 깔아 준다 — 원본 색감 그대로(보정 없이) 사용한다.
-export const TIER_BG_IMAGE = {
-  iron: "/tier-bg-iron.png",
-  bronze: "/tier-bg-bronze.png",
-  silver: "/tier-bg-silver.png",
-  gold: "/tier-bg-gold.png",
-  diamond: "/tier-bg-diamond.png",
-  master: "/tier-bg-master.png",
-  grandmaster: "/tier-bg-grandmaster.png",
-};
+// (v0.8.0) 티어별 세로 배경(TIER_BG_IMAGE, public/tier-bg-*.png 7장·약 40MB)은 v0.7.4 티어 여정 개편 뒤로 쓰이지 않아 파일과 함께 지웠다(BUG-201).
 // (v0.1.1) 디자이너가 구간(1~5)마다 로마 숫자가 함께 그려진 별도 이미지를 새로 올려줬다
 // (iron-1.png ~ iron-5.png 등, 파일명이 티어 key와 그대로 맞아떨어짐) — 이제 "티어명 텍스트 + 로마
 // 숫자"를 따로 적지 않고, 이 정확한 구간 이미지 한 장으로 티어와 구간을 동시에 나타낸다. 그랜드

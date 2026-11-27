@@ -19,10 +19,14 @@ const widthOf = (l) => { const d = l.filter((w) => !w.float); return d.reduce((a
 { const l = mk(4); l[1].float = { x: 10, y: 10 }; const r = fitDock(l, 900, "w3"); const f = r.find((w) => w.id === "w1"); if (!f || f.min) fails.push("띄운(float) 창은 접거나 지우면 안 됨"); }
 { const r = fitDock(mk(12), 900, "w11"); if (!r.some((w) => w.id === "w11")) fails.push("방금 연 창이 사라짐"); if (widthOf(r) > 900 - 32) fails.push("과다 창을 줄이지 못함"); }
 const app = readFileSync(join(ROOT, "src/App.jsx"), "utf8"), soc = readFileSync(join(ROOT, "src/app/social.jsx"), "utf8");
-for (const k of ["search", "friends", "chats"]) if (!new RegExp('dock\\.enabled\\) dock\\.open\\(\\{ id: "' + k + '"').test(app)) fails.push("헤더 버튼(" + k + ")이 데스크톱에서 도킹 창을 열지 않음");
+for (const k of ["search", "friends", "chats"]) if (!new RegExp('dockOn\\) dock\\.open\\(\\{ id: "' + k + '"').test(app)) fails.push("헤더 버튼(" + k + ")이 데스크톱에서 도킹 창을 열지 않음");
 if (!/<DockHost dock=\{dock\}/.test(app)) fails.push("App에 DockHost 없음");
+// (v0.8.0, BUG-192) DockHost는 로그인했을 때만 그려지므로, 창을 도킹으로 열지는 dockOn(= 로그인 && dock.enabled) 하나로만 판단한다
+if (!/const dockOn = !!user && dock\.enabled;/.test(app)) fails.push("App에 dockOn(= !!user && dock.enabled) 정의 없음");
+if ((app.match(/dock\.enabled/g) || []).length !== 2) fails.push("App.jsx에서 dock.enabled를 직접 쓰지 말고 dockOn을 쓸 것(로그아웃 상태 데스크톱에서 창이 안 열림, BUG-192)");
+if (!/\{dockOn && \(\(\) => \{/.test(app)) fails.push("DockHost 영역은 dockOn일 때 그려야 함");
 for (const [name, re] of [["SearchModal(통합 검색, 예전 UserSearchModal)", /export function SearchModal\(\{[^)]*docked/], ["ChatsModal", /export function ChatsModal\(\{ docked, onOpenChat/], ["FriendsModal", /export function FriendsModal\(\{ docked, onOpenChat/], ["ChatWindow", /export function ChatWindow\(/]]) if (!re.test(soc)) fails.push(name + " docked 지원 누락");
-if (!/dock\.enabled[^\n]*\) \{ dock\.open\(\{ id: "profile:"/.test(app) || !/<UserProfilePage[\s\S]{0,200}\bdocked\b/.test(app)) fails.push("데스크톱에서 다른 유저 프로필이 도킹 창으로 열리지 않음");
+if (!/dockOn[^\n]*\) \{ dock\.open\(\{ id: "profile:"/.test(app) || !/<UserProfilePage[\s\S]{0,200}\bdocked\b/.test(app)) fails.push("데스크톱에서 다른 유저 프로필이 도킹 창으로 열리지 않음");
 if (!/export function UserProfilePage\(\{[^}]*\bdocked\b/.test(soc)) fails.push("UserProfilePage docked 지원 누락");
 if ((soc.match(/style=\{docked \? dockedOuter/g) || []).length < 3) fails.push("모달 3종의 docked 바깥 틀(백드롭 제거) 누락");
 if (fails.length) { console.error("✗ 도킹 창 검사 실패:\n" + fails.map((x) => "  - " + x).join("\n")); process.exit(1); }
