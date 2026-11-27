@@ -87,6 +87,40 @@
 
 ## 버전 기록
 
+### OpenChess v0.8.0 - 2026/11/27
+
+테마: 전체 품질 점검(이미지·캐시·접근성·링크 미리보기), 분석 탭 휴대폰 렉·평가 속도·키워드 정확도, 플레이 탭 개편(모드 소개 장면·데크메이트 애니메이션·봇 버튼·코치 봇 KOKOA/MILKU·하위 주소), 소셜 탭 개편(연속 출석·리더보드 한 블록·게시물 정리·작성기 대국 불러오기), 레슨 용어 정리. **서버 SQL 변경 없음**(`supabase-setup.sql`은 그대로 다시 실행해도 됨). 마스터 대국 DB 원본은 `data/master-games.json`, 배포용 조각 `public/master/`는 빌드 때 생성(git 제외).
+
+**성능**
+- BUG-206 휴대폰 분석 탭 렉: 후보 수 평가(`useMergedMoves` live)를 엔진 진행 줄마다 `setMoves`하지 않고 `queueLive`로 모아 공용 박자(`onTick`)에 반영, `PieceGlyph` `React.memo`, 렌더마다 도는 layout effect의 레이아웃 읽기 제거(ClampText·KeywordScroll·MarqueeText는 ResizeObserver 안에서). `check-render-perf`.
+- BUG-212 수 블록 평가치 지연: 아는 수는 메인 탐색과 동시에 평가, 빠른 1차 평가 후 정밀 평가, 엔진 풀 미리 부팅, 풀이 없는 기기는 5초 심화 탐색을 뒤로. 통계는 목록이 완전하면 없는 수를 0판으로(자식 조회 생략)·엔진 상위 수 미리 받기·숫자 연출 0.35초.
+- BUG-213 도감 트리 채택률 조회가 앱 시작 직후 수천 곳에 동시에 나가 분석 탭 통계를 밀어냄 — 도감 탭을 연 뒤부터.
+- BUG-208 마스터 대국 DB(68MB·gzip 21MB)를 휴대폰이 한 번에 받지 못함 — `data/`로 옮기고 `scripts/build-master-shards.mjs`가 첫 3수 조각 + 2수 이하 요약(`top.json`, 연대별 대표 300판)을 만든다. `check-master-shards`가 원본과 대조.
+- BUG-201 이미지: 안 쓰던 티어 배경 7장·emoticon 삭제, 티어 기물·로고 webp, 파비콘·수 분류 아이콘 축소(약 49MB 감량), `check-public-image-size`. `/assets` 1년 immutable 캐시(`check-security-headers`), 미사용 폰트 Kotta One 제거.
+
+**기능**
+- 코치 봇: 그랜드마스터 봇 2800 → 2700, KOKOA(2705, 미하일 탈)·MILKU(2785, 바비 피셔) 추가(`play.jsx` `PLAY_BOT_TIERS` `style`·`coach`). 오프닝 북(`BOT_BOOKS`, FEN 위치 키·SAN→UCI 변환 `sanToUciAt`) 다음 multiPV 6줄 중 최선 대비 120cp(탈)/80cp(피셔) 이내에서 기풍 가중치(탈: 희생·체크·잡기 가산, 퀸 교환 감산 / 피셔: 희생 감산, 앞설 때 잡기·최선 수 가산, 온도 ×0.6). 대국·결과 창 아바타는 코치 그림.
+- 플레이 탭 하위 주소: `/play/standard`·`deckmate`·`coordinatesgame`·`knightrace`·`endlesscheckmate`·`backrankrushhour`(`PLAY_SUB_OF`, pushState·popstate·앱 안 뒤로 버튼 스택 `playScreenBack`). `/play/deckmate`는 블록으로 스크롤.
+- 분석 탭 키워드: BUG-207(엔진 임시 평가·낡은 값·스냅샷을 비교에서 제외, LOW-LEVEL은 이론 수·좋은 등급·평가 1위·많이 두는 수 제외) + 포지션 성격 키워드 10종(GAMBIT·EARLY QUEEN·TEMPO LOSS·KING WALK·WEAKENING·FIANCHETTO·PROPHYLAXIS·WING·CENTER·SPACE). 수 블록 퀘스트 배지를 누르면 플레이 퀘스트로 이동·강조(빛 띠·이름표).
+- 소셜 탭: 하루(KST) 한 번 연속 출석 애니메이션(`components/streakAttend.jsx`), 리더보드 한 블록(`puzzleSide.jsx` `Leaderboards` — 일반 대국 시간 분류별·미니게임 4종은 `minigame_leaderboard` p_scope, 퍼즐 XP·레이팅은 기존 RPC/친구는 공개 프로필, 칭호 수는 `pub.achv.earned` 정렬, 전체/친구 토글).
+- 새 게시물 작성기: 유산·대국에도 이미지 스캔, 대국 목록 플랫폼 토글(`PostGamePicker` — OpenChess `profile_recent_games`/chess.com, 퍼즐 마법사도 같은 부품), 대국 게시는 고른 대국으로 대국자·결과·보드 방향 자동 채움(`gameResultCode`).
+- 빠른 리뷰 엔진 Stockfish 19 Lite → 18 Lite(`QUICK_REVIEW_ENGINE`).
+
+**UI**
+- 플레이 탭: 갈색 박스를 모드 이름 + 모드별 애니메이션 장면(`components/modeHero.jsx`)으로, "?" 설명 합니다체, 일반 대국에도 "?" 추가. 봇 수준 버튼 크림·갈색·금색 5단계(`components/botTierButton.jsx`), "< 뒤로" 제거(상단 뒤로가 한 단계 뒤로).
+- 데크메이트 블록 애니메이션(`components/deckmateAnim.jsx`): 카드 등장·부채꼴 → Bxf7+ 한 줄 → 금빛 글자·암전 → 체스판 깔기(리뷰 진입 연출에서 떼어 낸 공용 부품 `components/boardIntro.jsx`) → 포지션 → Bxf7+ 희생, 반복(화면 밖 멈춤, 가벼운 모드 1회).
+- 분석 탭 계산 중 상자(코치·파셋 미니 보드 애니메이션). 일일 퀘스트 완료 알림을 퀘스트 블록 디자인으로, 휴대폰 퀘스트 페이지 높이를 플레이 페이지에 맞춤(`SwipePager stretch`, 카드 compact).
+- 소셜 탭: 검색창·필터를 일일 퍼즐 아래로, 게시물 보드 0.8 → 0.9, 날짜 끝 마침표 제거, 아이디 아래 줄 제거, 퍼즐 배경 금색 마름모 제거, 유산 코너 브래킷 대신 별자리를 따라 흐르는 유산 색 전류(`ElectricArc`), 대국 배경 재디자인(대국장), 티어 박스 퍼즐 레이팅 칩을 티어 색으로·말풍선 제거.
+- 레슨 용어: 캔디데이트 무브 → 후보 수, 익스체인지 새크리파이스 → 교환 희생, 인터메조 → 사잇수, 오퍼지션 → 오포지션 등(포크·핀·스큐어·디스커버드 어택·디코이·디플렉션·더블폰·오픈 파일·템포·퍼페추얼 체크·스모더드 메이트·백랭크 메이트는 그대로). `check-lessons` 용어 검사를 새 목록으로.
+- 링크 미리보기(og/twitter 메타·대표 이미지), 탭별 문서 제목.
+
+**버그 수정**
+- BUG-192(로그아웃 상태 데스크톱 검색·프로필 창), BUG-200(일일 퍼즐 카드 없음/실패 상태), BUG-202(접근성 NavBtn label·공용 ToggleSwitch), BUG-203(데크메이트 배지 위치), BUG-204(번역·검색 안내), BUG-205(스와이프 안내 자동 접힘), BUG-206~215(위), BUG-216(일일 퀘스트 chess.com 링크 — 문장 어디든·하늘색·데스크톱 웹/휴대폰 앱), BUG-217(봇 설명 줄바꿈), BUG-218(리뷰 "1.e4 분석 중" 띄어쓰기), BUG-219(레슨 "래더 메이트 메이트").
+
+**시스템**
+- prebuild 검사 추가·갱신: `check-render-perf`, `check-master-shards`, `check-public-image-size`, `check-a11y-controls`, `check-dock-windows`, `check-facet-icons` ZONES(modeHero·botTierButton·deckmateAnim·streakAttend·postBackdrops), `check-social-feed`, `check-play-quest`, `check-lessons`, `check-review-speed`.
+- `package.json` 0.8.0, 새 문구 5개 언어 번역.
+
 ### OpenChess v0.7.9 - 2026/11/21
 
 테마: 성능(첫 화면 번들·번역 분할), 학습 탭 전면 보강(두 코치 대화·질문 전 설명·지난 레슨 복습·연계·새 단계 "계산과 조합"·모든 레슨 고유 테마 퍼즐), 분석 탭 집중 분석 커뮤니티·댓글·전체 통계 재설계, 플레이·소셜·도감 다듬기. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`explorer_game_pgns` 표·`explorer_pgn_read/save`, 소셜 게시물 생성자·날짜 백필, `seedChapters` 새 레슨 5개).
