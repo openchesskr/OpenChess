@@ -172,8 +172,10 @@ const HERO_CSS = `
 .mh-topple{animation:mhTopple 4.8s ease-in-out infinite}.mh-mate{animation:mhMate 4.8s ease-in-out infinite}
 .mh-chev{animation:mhChev 1.2s ease-in-out infinite}.mh-rook{animation:mhRook 3.6s cubic-bezier(.6,0,.3,1) infinite}
 html[data-perf="lite"] .mode-hero *{animation-iteration-count:1!important}
-.mode-hero .mh-name{font-size:26px}
-@media (min-width:900px){.mode-hero.big{min-height:250px;flex-direction:column;align-items:stretch}.mode-hero.big .mh-scene{width:100%!important;height:150px!important}.mode-hero.big .mh-name{font-size:34px}}
+.mode-hero .mh-name{font-size:clamp(19px,6.2vw,26px)}
+.mode-hero .mh-text{flex:1 1 auto}
+@media (max-width:440px){.mode-hero .mh-scene{width:112px!important;height:68px!important}}
+@media (min-width:900px){.mode-hero.big{min-height:250px;flex-direction:column;align-items:stretch}.mode-hero.big .mh-text{flex:none}.mode-hero.big .mh-scene{width:100%!important;height:150px!important}.mode-hero.big .mh-name{font-size:34px}}
 `;
 
 /** 모드 소개 박스 — mode: standard | coord | knight | attack | rush, name: 화면에 보일 모드 이름, accent: 모드 강조색, big: 데스크톱 로비 왼쪽의 큰 카드 */
@@ -184,13 +186,14 @@ export function ModeHero({ mode, name, accent = T.brass, big = false }) {
       background: "linear-gradient(135deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.38)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.08), 0 12px 26px -14px rgba(36,21,9,.75)" }}>
       <style>{HERO_CSS}</style>
       <span aria-hidden="true" style={{ position: "absolute", right: -40, top: -60, width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(circle," + accent + "55 0%," + accent + "00 70%)", pointerEvents: "none" }} />
-      <div style={{ position: "relative", minWidth: 0, flex: big ? "none" : 1, display: "flex", alignItems: "center", gap: 12, order: big ? 2 : 0 }}>
+      {/* (v0.8.0, BUG-220) 이름 칸은 늘 줄어들 수 있게(mh-text flex 1) — 휴대폰에서 big이 flex:none이라 다른 언어의 긴 모드 이름이 잘렸다. 데스크톱 세로 배치에서만 flex none */}
+      <div className="mh-text" style={{ position: "relative", minWidth: 0, display: "flex", alignItems: "center", gap: 12, order: big ? 2 : 0 }}>
         <span style={{ width: 52, height: 52, borderRadius: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(255,246,222,.06)", border: "1px solid rgba(236,203,134,.35)" }}>
           <ModeIcon mode={mode} size={32} />
         </span>
         <span style={{ minWidth: 0 }}>
           <span style={{ display: "block", fontSize: 10, fontWeight: 900, letterSpacing: ".22em", color: accent }}>{MODE_TAGS[mode] || ""}</span>
-          <span className="mh-name" style={{ display: "block", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.12, color: T.ivoryHi, wordBreak: "keep-all" }}>{name}</span>
+          <span className="mh-name" style={{ display: "block", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.12, color: T.ivoryHi, wordBreak: "keep-all", overflowWrap: "break-word" }}>{name}</span>
         </span>
       </div>
       <svg className="mh-scene" viewBox="0 0 200 120" aria-hidden="true" style={{ position: "relative", flexShrink: 0, width: 150, height: 90, overflow: "visible" }}>
