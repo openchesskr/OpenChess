@@ -73,5 +73,9 @@ ok(!/explorer_pgn_read|explorer_pgn_save/.test(acl), "explorer_pgn_*가 브라�
   ok(/<MasterPlayerLine plain noRating side="w"/.test(card) && /<MasterPlayerLine plain noRating side="b"/.test(card), "전체 통계 대국은 레이팅을 숨김");
   ok(/<Search size=\{13\} \/>/.test(card) && /<BestMoveJumpButton /.test(card) && /<MasterPgnBox /.test(card), "보기·리뷰 버튼과 기보 펼침(마스터 통계 행과 같게)");
   ok(/onOpenGame=\{onOpenMyGame\} onOpenReview=\{onOpenMyGameAnalyze\}/.test(an), "보기·리뷰가 내 통계와 같은 경로로 열리지 않음"); }
+// (v0.8.1 BUG-224) 서버 기보 경로가 실패해도 브라우저에서 lichess.org 기보를 직접 받아 연다(이 수순으로 시작하는 대국인지 확인)
+{ ok(/\.catch\(\(\) => fetchExplorerSansDirect\(id, prefix\)\)/.test(an) && /https:\/\/lichess\.org\/game\/export\//.test(an) && /throw new Error\("mismatch"\)/.test(an), "전체 통계 기보: 서버 실패 시 브라우저 직접 받기 대체 경로·수순 확인이 없음(BUG-224)");
+  ok(/fetchExplorerSans\(g\.id, path\)\)\.then/.test(an) || /fetchExplorerSans\(g\.id, path\)/.test(an), "전체 통계 기보 요청에 수순(prefix)을 넘기지 않음");
+  ok(/connect-src[^"]*https:\/\/lichess\.org/.test(rd("vercel.json")), "CSP connect-src에 lichess.org가 없어 직접 받기가 막힘"); }
 if (fails.length) { console.error("✗ check-explorer-games 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-explorer-games: 전체 통계 — 수순 검증, Lichess 응답 정리, 쌓인 대국 합치기, 6시간 간격, 서버 전용 쓰기, PGN 저장·OpenChess 안에서 보기·리뷰, 추천/최근 섹션");

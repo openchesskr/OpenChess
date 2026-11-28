@@ -2,7 +2,7 @@
 // scripts/check-web-search.mjs가 검사한다. 수순 검증은 영상 검색과 같은 규칙(api/_lib/youtube.js parseMovesParam)을 쓴다.
 import { pgnQuery } from "./youtube.js";
 
-export const WEB_MAX_RESULTS = 10;   // (v0.7.9, 사용자 요청) 6 → 10. Tavily 기본 검색은 결과 개수와 상관없이 1크레딧
+export const WEB_MAX_RESULTS = 20;   // (v0.7.9, 사용자 요청) 6 → 10, (v0.8.1, 사용자 요청) 10 → 20(Tavily 한 번에 받을 수 있는 최대). 기본 검색은 결과 개수와 상관없이 1크레딧이라 무료 한도는 그대로
 export const WEB_DAILY_CAP = 30;   // 사이트 전체 하루 검색 상한 — Tavily 무료 1,000회/월(약 33회/일) 안쪽. 같은 검색은 엣지 7일 캐시라 실제 호출은 더 적다
 // 오프닝 이름 — Lichess 오프닝 이름에 쓰이는 글자(영문·숫자·공백·' ’ : , . ( ) - /)만, 2~80자. 그 밖의 글자가 있으면 이름 없이(수순으로) 검색한다.
 export function parseNameParam(raw) {

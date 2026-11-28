@@ -22,5 +22,10 @@ ok(tile && !/\{m\.wdl && <div/.test(tile[0]) && !/\{\(m\.name \|\| m\.isMain\) &
 { const gh = fs.readFileSync(new URL("../src/app/growthHome.jsx", import.meta.url), "utf8");
   ok(comp && /className="oc-tile-window oc-brass-scroll"/.test(comp[0]) && /\.\.\.BRASS_SCROLLBAR/.test(comp[0]) && /<MoreBelowHint /.test(comp[0]), "다음 수 블록 창이 공용 황동 스크롤바(BRASS_SCROLLBAR·MoreBelowHint)를 쓰지 않음");
   ok((gh.match(/<BrassScrollArea /g) || []).length >= 2 && !/overflowY: "auto", paddingRight: 4 \}\}>\{(growth|games)Node\}/.test(gh), "성장 분석·최근 대국 열이 다음 수 블록과 같은 스크롤바(BrassScrollArea)를 쓰지 않음"); }
+// (v0.8.1, 사용자 요청) 계산 중 상자는 수 블록이 하나도 없을 때만(블록 위에 끼어들어 목록을 밀어내지 않게)
+ok(/\{moves\.length === 0 && legalMoveCount > 0 && \(\s*<CoachThinkingBox /.test(src) && !/\(linesPending \|\| moves\.length === 0\) && legalMoveCount > 0/.test(src), "계산 중 상자가 수 블록 위에도 뜸(수 블록이 있으면 띄우지 말 것)");
+// (v0.8.1 BUG-221) 수를 둘 때 보드 깜빡임 — 평가치 막대는 새 값이 올 때까지 직전 값 유지, 이전 포지션 엔진 줄은 그 포지션 번호로 옅게·누르기 막기
+ok(/evalCp=\{boardEval\}/.test(src) && /heldEvalRef\.current = posEval/.test(src), "보드 평가치 막대가 수를 둘 때마다 0.00으로 튐(BUG-221 — 직전 값 유지)");
+ok(/pos: key,/.test(src) && /sans=\{linesStale \? linesSans : sans\}/.test(src) && /onPlayFirst=\{!focus && !linesStale \?/.test(src), "이전 포지션 엔진 줄을 지금 수순 번호로 보여 주거나 누를 수 있음(BUG-221)");
 if (fails.length) { console.error("✗ check-analysis-tiles 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-analysis-tiles: 데스크톱 다음 수 블록 6개 창 + 안쪽 스크롤 유지 · 모든 수 블록 같은 높이");

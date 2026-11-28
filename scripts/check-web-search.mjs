@@ -18,7 +18,7 @@ ok(webQuery(["e4", "e5", "Nf3"], null) === "1. e4 e5 2. Nf3 chess opening", "이
 { const r = cleanWebResults({ web: { results: [
     { title: "<strong>Riga</strong> &amp; more", url: "https://en.wikipedia.org/wiki/Ruy_Lopez", description: "The <b>Open</b> variation", profile: { name: "Wikipedia" } },
     { title: "bad", url: "javascript:alert(1)" }, { title: "ftp", url: "ftp://x.org/a" }, { title: "", url: "https://empty.org" }, { url: 5 },
-    ...Array.from({ length: 10 }, (_, i) => ({ title: "T" + i, url: "https://www.site" + i + ".com/p", description: "d" })),
+    ...Array.from({ length: WEB_MAX_RESULTS + 5 }, (_, i) => ({ title: "T" + i, url: "https://www.site" + i + ".com/p", description: "d" })),
   ] } });
   ok(r.length === WEB_MAX_RESULTS, "최대 " + WEB_MAX_RESULTS + "개");
   ok(r[0].title === "Riga & more" && r[0].snippet === "The Open variation" && r[0].site === "Wikipedia", "태그 제거·엔티티 풀기·사이트 이름");
@@ -32,7 +32,8 @@ ok(cleanWebResults(null).length === 0 && cleanWebResults({ web: {} }).length ===
 const api = rd("api/_lib/webSearchHandler.js"), yt = rd("api/youtube.js"), block = rd("src/components/communityBlock.jsx");
 
 // (v0.7.9) 구글식 미리보기 — 결과 수, 공개 주소만 열기(SSRF), <head>에서 이미지·아이콘·사이트 이름·게시일
-ok(WEB_MAX_RESULTS >= 10, "검색 결과가 10개 미만(사용자 요청으로 늘림)");
+ok(WEB_MAX_RESULTS >= 20, "검색 결과가 20개 미만(v0.8.1 사용자 요청으로 늘림)");
+ok(/max_results: Math\.min\(20,/.test(rd("api/_lib/webSearchHandler.js")), "Tavily max_results가 상한(20)을 넘을 수 있음");
 for (const bad of ["http://127.0.0.1/", "https://localhost/a", "https://10.0.0.1/", "http://[::1]/", "https://169.254.169.254/latest", "https://metadata.internal/", "https://printer.local/", "https://example.com:8443/", "https://u:p@example.com/", "https://2130706433/", "https://0x7f000001/", "file:///etc/passwd", "ftp://example.com/"]) ok(!isPublicHttpUrl(bad), "내부·이상한 주소를 열면 안 됨: " + bad);
 for (const good of ["https://en.wikipedia.org/wiki/Ruy_Lopez", "http://chess.com/x", "https://www.chessable.com:443/blog/"]) ok(isPublicHttpUrl(good), "공개 주소는 열어야 함: " + good);
 ok(cleanWebResults({ results: [{ title: "x", url: "http://127.0.0.1/a", content: "" }, { title: "y", url: "https://lichess.org/opening", content: "" }] }).map((r) => r.site).join() === "lichess.org", "내부 주소 결과는 버림");
@@ -74,6 +75,6 @@ ok(/\["websearch:ip:" \+ clientIp\(req\), 20, 60\], \["websearch:global", WEB_DA
 ok(/if \(off\.web && off\.yt && !dev\) return null;/.test(block), "웹 검색·영상이 모두 꺼져 있으면 일반 사용자에게는 커뮤니티 블록을 숨겨야 함(개발자에게는 진단 표시, BUG-190)");
 ok(/target="_blank" rel="noopener noreferrer nofollow"/.test(block) && !/<iframe/i.test(block), "웹 검색 링크는 새 창·noopener, 끼워 넣기 금지");
 ok(/if \(\(req\.query \|\| \{\}\)\.web === "1"\) return webSearchHandler\(req, res\);/.test(yt) && yt.indexOf("webSearchHandler(req, res)") < yt.indexOf("process.env.YOUTUBE_API_KEY"), "api/youtube.js가 ?web=1을 YouTube 키 확인보다 먼저 웹 검색 처리기로 넘기지 않음");
-ok(/apiUrl\("\/api\/youtube\?web=1&moves="/.test(rd("src/lib/webSearch.js")), "브라우저가 웹 검색을 /api/youtube?web=1로 부르지 않음");
+ok(/apiUrl\("\/api\/youtube\?web=1(&r=\d+)?&moves="/.test(rd("src/lib/webSearch.js")), "브라우저가 웹 검색을 /api/youtube?web=1로 부르지 않음");
 if (fails.length) { console.error("✗ check-web-search 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-web-search: 커뮤니티 블록 웹 검색 — 이름·수순 검증, 검색어, 응답 정리, 호출 한도, 화면 연결");

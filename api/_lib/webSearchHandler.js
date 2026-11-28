@@ -4,7 +4,7 @@
 //  · (v0.7.8, 사용자 결정) 검색 서비스는 Tavily — 카드 없이 매달 1,000회 무료(Researcher 요금제, 매월 초기화). Brave는 2026년부터 무료 요금제가 없어지고 카드 등록이 필요해 바꿨다.
 //    API 키(TAVILY_API_KEY)는 Vercel 환경변수로만 존재한다. 키가 없으면 503 not_configured(화면은 웹 검색 칸을 조용히 숨긴다).
 //  · 받는 값은 moves(쉼표 구분 SAN, chess.js로 검증)와 name(오프닝 이름, 허용 글자·길이 검사) — 임의 검색어 중계 금지. 검색어는 늘 "… chess opening".
-//  · (v0.7.9) 결과마다 미리보기 이미지·아이콘·사이트 이름·게시일(withPreviews) — 결과는 최대 WEB_MAX_RESULTS(10)개.
+//  · (v0.7.9) 결과마다 미리보기 이미지·아이콘·사이트 이름·게시일(withPreviews) — 결과는 최대 WEB_MAX_RESULTS(20)개(v0.8.1).
 //  · 같은 검색은 엣지에 7일 캐시, IP당 분당 20회·전체 하루 WEB_DAILY_CAP회(무료 1,000회/월 안쪽)로 제한한다. 기본 검색(1회 = 1크레딧)만 쓴다.
 import { clientIp, supabaseEnv, rateLimited } from "./server.js";
 import { parseMovesParam } from "./youtube.js";
@@ -83,7 +83,7 @@ export async function webSearchHandler(req, res) {
     const upstream = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-      body: JSON.stringify({ query, search_depth: "basic", max_results: WEB_MAX_RESULTS + 2, include_answer: false, include_raw_content: false, include_images: false }),
+      body: JSON.stringify({ query, search_depth: "basic", max_results: Math.min(20, WEB_MAX_RESULTS + 2), include_answer: false, include_raw_content: false, include_images: false }),
     });
     if (!upstream.ok) { res.status(502).json({ error: "upstream" }); return; }
     const results = await withPreviews(cleanWebResults(await upstream.json()));

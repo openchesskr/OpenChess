@@ -14,7 +14,7 @@ import { RecentGameBoxes, GameFilterPills, profileGameRowToGame, fetchProfileGam
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { LoadingRows } from "../components/motionKit.jsx";
-import { pickRecentGames } from "../lib/recentGames.js";
+import { pickRecentGames, GROWTH_RECENT_GAMES, GROWTH_MAX_GAMES } from "../lib/recentGames.js";
 import { t } from "../lib/i18n.js";
 import { SwipePager } from "../components/swipePager.jsx";
 import { OffscreenPause } from "../components/offscreenPause.jsx";
@@ -33,8 +33,10 @@ export function useRecentSources({ user, uid, chesscom, ccName }) {
   const ccReady = !!(chesscom && chesscom.status === "ready");
   const ccGames = useMemo(() => (ccReady ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess"), [ccReady, chesscom && chesscom.games]);
   const loading = rows == null || !!(chesscom && chesscom.status === "loading");
-  const recent = useMemo(() => pickRecentGames([...ocGames.map((g) => ({ game: g, owner: user })), ...(ccName ? ccGames.map((g) => ({ game: g, owner: ccName })) : [])]), [ocGames, ccGames, user, ccName]);
-  return { ocGames, ccGames, ccReady, ocLoading: rows == null, ccLoading: !!(chesscom && chesscom.status === "loading"), loading, recent };
+  // (v0.8.1, 사용자 요청) pool: 첫 5판(recent) 뒤로 더 지난 대국까지 최근순 GROWTH_MAX_GAMES판 — 성장 분석이 5판을 끝낸 뒤에도 이어서 분석한다.
+  const pool = useMemo(() => pickRecentGames([...ocGames.map((g) => ({ game: g, owner: user })), ...(ccName ? ccGames.map((g) => ({ game: g, owner: ccName })) : [])], GROWTH_MAX_GAMES), [ocGames, ccGames, user, ccName]);
+  const recent = useMemo(() => pool.slice(0, GROWTH_RECENT_GAMES), [pool]);
+  return { ocGames, ccGames, ccReady, ocLoading: rows == null, ccLoading: !!(chesscom && chesscom.status === "loading"), loading, recent, pool };
 }
 export function GrowthGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpenGameAnalyze, loginCard }) {
   const [timeFilter, setTimeFilter] = useTabMemory("growth.timeFilter", "all"), [colorFilter, setColorFilter] = useTabMemory("growth.colorFilter", "all");   // (v0.7.5) 탭을 오가도 유지
@@ -127,7 +129,7 @@ export function AnalysisWithGrowth({ analysisNode, focusActive, ...p }) {
   //  자동 리뷰는 이 컴포넌트(분석 탭 전체)가 들고 있어 집중 분석 중이라 성장 분석 영역이 빠져 있어도 멈추지 않는다.
   const [bgOn, setBgOn] = useState(false);
   useEffect(() => { const id = setTimeout(() => setBgOn(true), GROWTH_BG_DELAY_MS); return () => clearTimeout(id); }, []);
-  const auto = useGrowthAutoReview({ recent: src.recent, engine: p.engine, reviewSpeed: p.reviewSpeed, quick: p.quickReview, active: bgOn || visible });
+  const auto = useGrowthAutoReview({ recent: src.recent, pool: src.pool, engine: p.engine, reviewSpeed: p.reviewSpeed, quick: p.quickReview, active: bgOn || visible });
   const growthNode = <GrowthPanel uid={p.growthUid || null} games={p.growthGames} me={p.me} onOpenTitle={p.onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={p.engine} auto={auto} visible={visible} onOpenGameAnalyze={p.onOpenGameAnalyze} onOpenGame={p.onOpenGame} />;
   const gamesNode = <GrowthGamesColumn view={view} setView={setView} user={p.user} ccName={p.ccName} src={src} onOpenGame={p.onOpenGame} onOpenGameAnalyze={p.onOpenGameAnalyze} loginCard={<LoginCard openAuth={p.openAuth} />} />;
   if (mobile) {

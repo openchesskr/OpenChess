@@ -118,8 +118,9 @@ export function EvalBar({ cp, width, depth, vertical, font, flip = false }) {
           도는 T.ivoryHi(#FAF2E2)였다 — 같은 "백 유리"를 나타내는 색인데 바와 박스가 서로 다른 흰색을
           쓰면 불일치해 보이므로 EvalBadge와 동일한 순백으로 맞춘다. */}
       <div style={{ display: "flex", height: 18, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
-        <div style={{ width: whitePct + "%", background: "#FFFFFF" }} />
-        <div style={{ width: (100 - whitePct) + "%", background: "#140C07" }} />
+        {/* (v0.8.1) 값이 바뀔 때 순간이동하지 않고 미끄러지게 — 수마다 막대가 번쩍이던 것(BUG-221)을 줄인다. */}
+        <div style={{ width: whitePct + "%", background: "#FFFFFF", transition: "width .35s ease" }} />
+        <div style={{ width: (100 - whitePct) + "%", background: "#140C07", transition: "width .35s ease" }} />
       </div>
       {/* (v0.1.3 UI) 색이 채워진 박스 배지 대신, 소수점 둘째 자리까지 표기한 텍스트를 바에 직접
           얹는다(박스 배경 없음) — 백이 유리하면 흰 구간(좌측)에 검은 텍스트를 좌측 끝에, 흑이

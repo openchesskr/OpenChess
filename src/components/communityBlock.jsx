@@ -2,7 +2,8 @@
 // 웹 검색 결과와 관련 YouTube 영상을 함께 보여 준다. 웹 검색은 api/youtube.js?web=1(api/_lib/webSearchHandler.js), 영상은 api/youtube.js(기존 "영상" 블록을 bare로 넣음).
 // 서버에 두 키가 모두 없으면 블록 전체를 숨기고, 하나만 있으면 그 칸만 보인다. 링크는 새 창(noopener)으로 연다 — 사이트 안에 끼워 넣지 않는다.
 import React, { useEffect, useState } from "react";
-import { Users, Globe, RefreshCw } from "./ocIcons.jsx";
+import { Globe, RefreshCw } from "./ocIcons.jsx";
+import { BrassScrollArea } from "./brassScroll.jsx";
 import { T } from "../lib/theme.js";
 import { t, tx, fmtDateOnly } from "../lib/i18n.js";
 import { searchWeb } from "../lib/webSearch.js";
@@ -118,7 +119,9 @@ function WebResults({ sans, name }) {
 /* sans: 그 수까지의 수순(SAN), name: 그 수의 오프닝 이름(없으면 null — 수순으로 검색), dev: 개발자·공동개발자(서버 설정 진단 표시)
    (v0.7.8 BUG-189) 수순이 40수(YT_MAX_PLIES)를 넘으면 블록 전체를 숨기던 것을, 앞 40수(오프닝 부분)로 검색하도록 바꿨다 — 실전 대국 21수째부터 블록이 사라졌다.
    (v0.7.8 BUG-190) 서버 키가 없으면(503) 아무 표시 없이 숨어서 원인을 알 수 없었다 — 개발자에게는 어떤 환경변수가 없는지 보여 준다. */
-export function CommunityBlock({ sans, name, dev = false }) {
+// (v0.8.1, 사용자 요청) "커뮤니티" 제목 줄을 없앴다(집중 분석 페이지 버튼 이름이 "커뮤니티"가 됐다). scrollH를 주면 블록이 그 높이로 고정되고 안쪽만
+//  황동 스크롤바로 스크롤된다 — 아래 댓글 블록과 같은 높이로 맞춘다.
+export function CommunityBlock({ sans, name, dev = false, scrollH = null }) {
   const q = Array.isArray(sans) ? sans.slice(0, YT_MAX_PLIES) : [];
   const key = q.join(" ") + "|" + (name || "");
   const [off, setOff] = useState({ web: false, yt: false });
@@ -131,18 +134,16 @@ export function CommunityBlock({ sans, name, dev = false }) {
   if (!q.length) return null;
   const missing = [off.yt && "YOUTUBE_API_KEY", off.web && "TAVILY_API_KEY"].filter(Boolean);
   if (off.web && off.yt && !dev) return null;
-  return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box", marginBottom: 10 }}>
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-        <Users size={15} style={{ color: T.brass }} />
-        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("커뮤니티")}</span>
-        {name && <span style={{ fontSize: 11.5, color: T.inkSoft, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
-      </div>
+  const body = (
+    <>
       {dev && missing.length > 0 && (
         <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 0 8px", lineHeight: 1.5 }}>{t("개발자 안내: 이 배포에 서버 환경변수 {0}이 없어 검색을 숨겼습니다. Vercel 환경변수(이 배포 환경 범위)에 추가한 뒤 다시 배포하세요.", missing.join(", "))}</p>
       )}
       {!off.web && <WebResults sans={q} name={name} />}
       <YoutubeVideosBlock sans={q} bare first={off.web} />
-    </div>
+    </>
   );
+  const card = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, boxSizing: "border-box", marginBottom: 10 };
+  if (scrollH) return <BrassScrollArea outerStyle={card} style={{ height: scrollH, padding: 12, boxSizing: "border-box", borderRadius: 12 }}>{body}</BrassScrollArea>;
+  return <div style={{ ...card, padding: 12 }}>{body}</div>;
 }

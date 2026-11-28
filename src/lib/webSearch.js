@@ -13,7 +13,8 @@ export function searchWeb(sans, name) {
   if (cache.has(k)) return cache.get(k);
   const p = (async () => {
     try {
-      const r = await fetch(apiUrl("/api/youtube?web=1&moves=" + encodeURIComponent(moves) + (nm ? "&name=" + encodeURIComponent(nm) : "")));
+      // (v0.8.1) r=20: 결과 수를 10 → 20으로 늘리며 엣지 캐시(7일)에 남은 10개짜리 응답을 쓰지 않도록 주소를 바꾼다(서버는 이 값을 읽지 않는다).
+      const r = await fetch(apiUrl("/api/youtube?web=1&r=20&moves=" + encodeURIComponent(moves) + (nm ? "&name=" + encodeURIComponent(nm) : "")));
       if (r.status === 503) return { status: "off", results: [], query: "" };
       if (r.status === 429) return { status: "busy", results: [], query: "" };
       if (!r.ok) return { status: "error", results: [], query: "" };

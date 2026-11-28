@@ -805,19 +805,31 @@ function MistakeLog({ g, onReview, bare }) {
 /* 학습 탭의 성장 분석 — 맨 위 프로필 헤더, 그 아래는 리뷰 5판 게이트(미달) 또는 분석 본문(달성: 요약·성장 곡선·고칠 한 가지·구간 진단·실수 원인·수 유형·아쉬운 수·마스터 스타일). */
 /* 최근 대국 5판을 엔진이 백그라운드에서 자동 리뷰한다 — 캐시·서버 공유 캐시에 있으면 엔진 없이, 없으면 한 판씩 분석(리뷰 화면과 같은 캐시라 나중에 열면 바로 보임).
    새 대국이 생겨 최근 5판이 바뀌면 새 판만 분석한다(항상 최신). 반환: 분석이 끝난 판의 기록 목록과 진행 상황. */
-function useAutoReview({ recent, engine, reviewSpeed, quick, paused }) {
+// (v0.8.1, 사용자 요청) list: 최근순 대국 — 앞의 gateN판(성장 분석 시작 조건)을 먼저 분석하고, 다 끝난 뒤에도 멈추지 않고 그 뒤 판들을 한 판씩 이어서 분석한다.
+//  records는 분석이 끝난 모든 판(최근순)이라, 한 판이 끝날 때마다 성장 분석 통계·판 수가 늘어난다. settled·gateDone은 앞 gateN판 기준(결과를 처음 보여 줄지).
+//  (BUG-223) 화면이 꺼져 있거나 다른 앱에 가 있는 동안(document.hidden)은 새 판을 시작하지 않는다 — 그 사이 워커가 멈춰 평가가 잇달아 실패한다.
+//  실패한 판은 화면이 다시 보이면 한 번 더 시도한다(예전엔 세션 내내 실패로 남아 5판이 영영 다 안 채워질 수 있었다).
+function useAutoReview({ list, gateN, engine, reviewSpeed, quick, paused }) {
   const [tick, setTick] = useState(0), [failed, setFailed] = useState(() => new Set()), [activeKey, setActiveKey] = useState(null);
-  const sig = recent.map((g) => reviewKeyOf(g)).join("|");
+  const [visTick, setVisTick] = useState(0);
+  const sig = list.map((g) => reviewKeyOf(g)).join("|");
   const ready = !!engine && engine.status === "ready";
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const onVis = () => { if (!document.hidden) { setFailed((prev) => (prev.size ? new Set() : prev)); setVisTick((n) => n + 1); } };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const game of recent) {
+      for (const game of list) {
         if (cancelled) return;
         const key = reviewKeyOf(game);
-        if (!key || cachedReviewOf(game)) continue;
+        if (!key || cachedReviewOf(game) || failed.has(key)) continue;
         setActiveKey(key);                        // (v0.7.5) 진행 화면이 지금 분석 중인 판을 보여 준다
         if (!ready || paused) return;             // 엔진이 준비되면(또는 화면에 보이면) 이 효과가 다시 돈다
+        if (typeof document !== "undefined" && document.hidden) return;   // 다시 보이면(visTick) 이어서
         const r = await ensureReview(game, { engine, reviewSpeed, quick });
         if (cancelled) return;
         if (r) setTick((n) => n + 1); else setFailed((prev) => new Set(prev).add(key));
@@ -825,13 +837,15 @@ function useAutoReview({ recent, engine, reviewSpeed, quick, paused }) {
       if (!cancelled) setActiveKey(null);
     })();
     return () => { cancelled = true; };
-  }, [sig, ready, reviewSpeed, quick, paused]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const records = useMemo(() => recent.map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sig, ready, reviewSpeed, quick, paused, visTick, failed]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const records = useMemo(() => list.map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const states = {};
   for (const r of records) states[r.key] = "done";
   for (const key of failed) if (!states[key]) states[key] = "fail";
-  const failedN = recent.filter((game) => states[reviewKeyOf(game)] === "fail").length;
-  return { records, done: records.length, total: recent.length, settled: recent.length > 0 && records.length + failedN >= recent.length, states, activeKey };
+  const gate = list.slice(0, gateN);
+  const gateDone = gate.filter((game) => states[reviewKeyOf(game)] === "done").length;
+  const gateFailed = gate.filter((game) => states[reviewKeyOf(game)] === "fail").length;
+  return { records, done: records.length, gateDone, total: list.length, settled: gate.length > 0 && gateDone + gateFailed >= gate.length, states, activeKey };
 }
 
 /* (v0.7.6) 학습 탭 맞춤 학습(복습·추천 레슨)용 — 엔진을 돌리지 않고, 성장 분석이 이미 리뷰해 둔(캐시) 최근 판만 모아 같은 분석(useGrowthData)을 만든다. */
@@ -847,7 +861,7 @@ export { MiniBoard, tacLabel, reviewGameOf };
 // 분석 탭의 실시간 평가와 엔진 대기열을 다투지 않게 한다. 캐시에 있는 판은 그대로 보인다.
 // (v0.7.8, 사용자 요청) 자동 리뷰를 성장 분석 화면 바깥(분석 탭 전체, growthHome.jsx AnalysisWithGrowth)에서 돌린다 — 성장 분석을 스크롤해 보지 않아도,
 //  집중 분석 중이라 성장 분석 영역이 화면에서 빠져 있어도 백그라운드에서 최근 대국을 모아 분석해 둔다. active=false면(접속 직후 엔진 부팅 중 등) 미룬다.
-export function useGrowthAutoReview({ recent = [], engine, reviewSpeed, quick, active = true }) {
+export function useGrowthAutoReview({ recent = [], pool = null, engine, reviewSpeed, quick, active = true }) {
   const need = GROWTH_RECENT_GAMES;
   const enough = recent.length >= need;
   // (v0.7.7 모바일 성장 분석 수정) 휴대폰·메모리 적은 기기에서 정식 대형 신경망(17·18·19, 워커 하나 약 580MB)을 고른 경우, 보조 워커 풀을 띄울 수 없어
@@ -858,7 +872,8 @@ export function useGrowthAutoReview({ recent = [], engine, reviewSpeed, quick, a
     const lite = ENGINE_PROFILES[QUICK_REVIEW_ENGINE];
     return lite ? { ...engine, profile: lite.id, urls: lite.urls } : engine;
   }, [engine]);
-  const auto = useAutoReview({ recent: enough ? recent : [], engine: reviewEngine, reviewSpeed, quick, paused: !active });
+  const list = pool && pool.length >= recent.length ? pool : recent;
+  const auto = useAutoReview({ list: enough ? list : [], gateN: need, engine: reviewEngine, reviewSpeed, quick, paused: !active });
   return { ...auto, enough, need };
 }
 
@@ -866,7 +881,7 @@ export function useGrowthAutoReview({ recent = [], engine, reviewSpeed, quick, a
 export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, auto, visible = true, onOpenGameAnalyze, onOpenGame }) {
   useEffect(() => { purgeLegacyGrowthData(); }, []);
   const { need, enough } = auto;
-  const showResults = enough && auto.settled && auto.done >= 1;
+  const showResults = enough && auto.settled && auto.gateDone >= 1;
   // (v0.7.8, 사용자 요청) 보여 주기 연출 — 분석이 끝난 상태에서 처음 화면에 들어오면 예전 분석 애니메이션을 약 5초(SHOWCASE_MS) 재생한 뒤 결과를 보인다.
   //  분석 진행을 화면에서 직접 지켜본 경우(보이는 동안 아직 분석 중이었음)는 이미 진짜 연출을 봤으므로 곧장 결과로 넘어간다.
   const sawLiveRef = useRef(false);
@@ -902,7 +917,7 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
           <>
             {g ? (
               <>
-                <ReportStrip n={auto.done} />
+                <ReportStrip n={auto.done} more={!!auto.activeKey} />
                 <SectionNav items={[["gp-sum", t("성장 요약")], ["gp-diag", t("약점 진단")], ...(g.badMoves.length ? [["gp-log", t("실수 기록")]] : []), ["gp-style", t("마스터 스타일")]]} />
                 <ThemeSection id="gp-sum" no="1" title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
                   <Overview g={g} onReview={onOpenGameAnalyze} perf={perf} />

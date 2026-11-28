@@ -7,7 +7,7 @@ import { drawKindLabel, boardFromSans } from "../lib/chessRules.js";
 import { chessTcCategory } from "../lib/chessRating.js";
 import { SB_ON, sbRpc } from "../lib/supabaseClient.js";
 import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
-import { TIME_CLASS_LABEL, timeControlFromKey, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey, useNarrow } from "./common.jsx";
+import { TIME_CLASS_LABEL, timeControlFromKey, fmtFull, openingNameOf, Board, cachedReviewSummary, useReviewSummaryVersion, reviewStorageKey, useNarrow } from "./common.jsx";
 import { recordAround } from "../lib/ccGameToast.js";
 import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
@@ -393,7 +393,8 @@ function GameBox({ g, rc, username, allGames, noBoard, onOpenGame, onOpenGameAna
   const accent = won ? T.best : lost ? T.blunder : T.inkSoft;
   const oppSide = g.color === "w" ? g.black : g.white;
   const board = useMemo(() => { if (noBoard) return null; try { return boardFromSans(g.moves || []); } catch { return null; } }, [g.moves, noBoard]);
-  const summary = useMemo(() => cachedReviewSummary(g), [g]);
+  const summaryVer = useReviewSummaryVersion();   // (v0.8.1) 자동 리뷰가 판을 끝낼 때마다 탁월·유일 개수를 다시 읽는다
+  const summary = useMemo(() => cachedReviewSummary(g), [g, summaryVer]);   // eslint-disable-line react-hooks/exhaustive-deps
   const rec = useMemo(() => { try { return g.opening ? recordAround(allGames, g) : null; } catch { return null; } }, [allGames, g]);
   const d = g.endTime ? new Date(g.endTime * 1000) : null;
   const date = d ? d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0") : "";

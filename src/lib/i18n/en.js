@@ -2132,6 +2132,7 @@ export default {
   "최근 대국이 {0}판 이상 쌓이면 성장 분석이 자동으로 시작됨": "Growth analysis starts automatically once {0} or more recent games are available",
   "분석 엔진을 쓸 수 없어 자동 분석을 할 수 없음": "The analysis engine is unavailable, so automatic analysis cannot run",
   "분석 엔진 준비 중…": "Preparing the analysis engine…",
+  "지난 대국을 이어서 분석하는 중": "Analyzing older games too",
   "리뷰하지 않아도 최근 {0}판을 자동으로 분석하는 중": "Analyzing the last {0} games automatically, no Review needed",
   "분석이 끝나면 여기에 결과가 나타남": "Results appear here when the analysis finishes",
   "무엇이 문제인가": "What the problem is",

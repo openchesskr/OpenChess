@@ -314,7 +314,8 @@ export function CountUpFrom0({ value, format, duration = 900 }) {
   return <CountUp value={v} duration={duration} format={format} />;
 }
 /* 결과 머리 띠 — "// GROWTH REPORT" 라벨과 분석한 판 수, 이퀄라이저(반복) */
-export function ReportStrip({ n }) {
+// (v0.8.1, 사용자 요청) more: 첫 5판 뒤로 더 지난 대국을 이어서 분석하는 중 — 판 수 옆에 "+ 분석 중"을 깜빡이며 보여 준다(한 판이 끝나면 n과 통계가 늘어난다).
+export function ReportStrip({ n, more = false }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} style={{ margin: "2px 12px 12px", position: "relative", clipPath: cut(10), background: "linear-gradient(90deg,#2E1B10,#3A2516 60%,#2E1B10)", padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
       <div aria-hidden className="gx-grid" style={{ opacity: 0.06 }} />
@@ -322,6 +323,7 @@ export function ReportStrip({ n }) {
       <Sys style={{ position: "relative", whiteSpace: "nowrap" }}>// <ScrambleText text="GROWTH REPORT" loopMs={10000} /></Sys>
       <span style={{ flex: 1 }} />
       <span style={{ position: "relative", fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: K.soft, whiteSpace: "nowrap" }}>{n} GAMES</span>
+      {more && <span className="gx-pulse" title={t("지난 대국을 이어서 분석하는 중")} style={{ position: "relative", fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: ".1em", color: GOLD[1] || "#ECCB86", whiteSpace: "nowrap" }}>+ SCAN</span>}
       <EqBars n={4} style={{ position: "relative" }} />
     </motion.div>
   );

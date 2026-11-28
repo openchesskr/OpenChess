@@ -5,7 +5,7 @@ import { autoMoveKeywords, blockKeywords } from "../lib/moveKeywords.js";
 import { tilePuzzleTheme } from "../lib/matePuzzle.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { CommunityBlock } from "../components/communityBlock.jsx";
-import { BRASS_SCROLLBAR, BrassScrollStyle, MoreBelowHint } from "../components/brassScroll.jsx";
+import { BRASS_SCROLLBAR, BrassScrollStyle, MoreBelowHint, BrassScrollArea } from "../components/brassScroll.jsx";
 import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { LOOP, engineLineGapMs } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
@@ -1248,6 +1248,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           return {
             ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
             sans: pvUciToSans(sans, pv.pv, pv.depth || 0),   // (v0.6.6, 사용자 요청) 수순 길이 = 지금 도달한 depth(예전엔 15수 고정)
+            pos: key,   // (v0.8.1) 이 줄이 계산된 포지션 — 수를 둔 직후 아직 남아 있는 이전 포지션 줄을 구분한다(BUG-221)
           };
         } catch { return null; }
       }).filter((l) => l && l.sans && l.sans.length)).slice(0, 3);
@@ -2214,7 +2215,8 @@ function MoveNoteCard({ n, photo, canModerate, uid, onSaved, onDeleted, ownSans,
 // 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
 // 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
 // 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
-function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump }) {
+// (v0.8.1, 사용자 요청) scrollH를 주면 위 커뮤니티 블록과 같은 높이로 고정하고 안쪽만 황동 스크롤바로 스크롤한다.
+function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump, scrollH = null }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2290,8 +2292,13 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
   }, [photoUids.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
   const count = notes ? notes.length : 0;
   const cancelCompose = () => { setDraft(""); setErr(""); setComposing(false); };
-  return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "12px 14px", boxSizing: "border-box" }}>
+  const noteCard = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, boxSizing: "border-box" };
+  // 감싸는 요소의 종류는 scrollH로만 정해져 렌더마다 같다(컴포넌트를 렌더 안에서 새로 만들면 입력칸이 매번 다시 마운트돼 포커스를 잃는다).
+  const wrapNote = (children) => (scrollH
+    ? <BrassScrollArea outerStyle={noteCard} style={{ height: scrollH, padding: "12px 14px", boxSizing: "border-box", borderRadius: 12 }}>{children}</BrassScrollArea>
+    : <div style={{ ...noteCard, padding: "12px 14px" }}>{children}</div>);
+  return wrapNote(
+    <>
       <style>{YT_CSS}</style>
       {/* 머리: 댓글 N개 + 정렬 기준(인기순·날짜순·최신순) */}
       <div className="flex items-center" style={{ gap: 18, marginBottom: 12 }}>
@@ -2348,7 +2355,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
       ) : (
         <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.6, margin: "8px 0 2px 48px" }}>{t("아직 댓글 없음. 첫 댓글 남기기")}</p>
       )}
-    </div>
+    </>
   );
 }
 // (버그 수정) 마스터 대국이 Lichess 마스터 DB·개발자 추가분·구매한 외부 대국 데이터베이스 세 소스를 출처 구분 없이
@@ -2478,22 +2485,39 @@ function useExplorerGames(active, path) {
 }
 // (v0.7.9) 전체 통계 대국의 기보 — 서버가 저장한 PGN(처음엔 Lichess에서 받아 검증·저장). 같은 대국은 이 탭 안에서 다시 묻지 않는다.
 const explorerPgnCache = new Map();   // id → Promise<string[]>(SAN 수순)
-function fetchExplorerSans(id) {
+// (v0.8.1, BUG-224) 서버 경로가 실패하면(Vercel 공유 IP가 lichess.org 기보 내려받기 호출 제한에 걸리거나, 탐색기 응답의 대국이 DB에 쌓이지 못해 404)
+//  "기보를 불러오지 못함"만 뜨고 대국을 볼 수 없었다 — 브라우저에서 lichess.org 기보 API(CORS 허용, CSP connect-src에 있음)로 직접 한 번 더 받는다.
+//  그 대국이 정말 이 수순으로 시작하는지(prefix) 확인해, 엉뚱한 기보를 열지 않는다.
+const EXPLORER_ID_RE = /^[A-Za-z0-9]{8}$/;
+function fetchExplorerSansDirect(id, prefix) {
+  if (!EXPLORER_ID_RE.test(String(id || ""))) return Promise.reject(new Error("id"));
+  return fetch("https://lichess.org/game/export/" + encodeURIComponent(id) + "?moves=true&tags=false&clocks=false&evals=false&opening=false&literate=false", { headers: { Accept: "application/x-chess-pgn" } })
+    .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+    .then((txt) => {
+      const sans = parsePgnSans(txt || "");
+      if (!sans.length || sans.length > 600) throw new Error("empty");
+      if (prefix && prefix.some((x, i) => stripSuffix(x) !== stripSuffix(sans[i] || ""))) throw new Error("mismatch");
+      try { boardFromSans(sans); } catch { throw new Error("illegal"); }
+      return sans;
+    });
+}
+function fetchExplorerSans(id, prefix) {
   if (explorerPgnCache.has(id)) return explorerPgnCache.get(id);
   const p = fetch(apiUrl("/api/lichess?gpgn=1&id=" + encodeURIComponent(id)))
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((d) => { const sans = d && typeof d.pgn === "string" ? parsePgnSans(d.pgn) : []; if (!sans.length) throw new Error(t("빈 기보")); return sans; });
+    .then((d) => { const sans = d && typeof d.pgn === "string" ? parsePgnSans(d.pgn) : []; if (!sans.length) throw new Error(t("빈 기보")); return sans; })
+    .catch(() => fetchExplorerSansDirect(id, prefix));
   explorerPgnCache.set(id, p);
   p.catch(() => explorerPgnCache.delete(id));   // 실패는 기억하지 않는다(다시 시도 가능)
   return p;
 }
 // 대국 행 — 마스터 통계 행과 같은 구조(두 선수 줄·왕관·결과, 날짜·시간 규정 줄, 보기·리뷰 버튼, 누르면 기보 펼침). 레이팅만 숨긴다.
-function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onReview, err }) {
+function ExplorerGameRow({ g, ply, path, expanded, onToggle, busy, dim, onOpen, onReview, err }) {
   const [sans, setSans] = useState(null);   // null | "loading" | "error" | string[]
   useEffect(() => {
     if (!expanded || Array.isArray(sans) || sans === "loading") return;
     let off = false; setSans("loading");
-    fetchExplorerSans(g.id).then((x) => { if (!off) setSans(x); }, () => { if (!off) setSans("error"); });
+    fetchExplorerSans(g.id, path).then((x) => { if (!off) setSans(x); }, () => { if (!off) setSans("error"); });
     return () => { off = true; };
   }, [expanded]);   // eslint-disable-line react-hooks/exhaustive-deps
   const meta = g.month ? g.month.replace("-", ".") : "";   // (v0.8.0, 사용자 요청) 유저 통계에는 타임 컨트롤(속도)을 표시하지 않는다
@@ -2527,7 +2551,7 @@ function ExplorerGameRow({ g, ply, expanded, onToggle, busy, dim, onOpen, onRevi
     </>
   );
 }
-function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview, errFor }) {
+function ExplorerGameSection({ title, games, ply, path, busyId, busyKind, expandedId, setExpandedId, onOpen, onReview, errFor }) {
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [games]);
   if (!games.length) return null;
@@ -2536,7 +2560,7 @@ function ExplorerGameSection({ title, games, ply, busyId, busyKind, expandedId, 
     <div style={{ marginTop: 12 }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{title}</div>
       {games.slice(page * EXPLORER_PAGE, (page + 1) * EXPLORER_PAGE).map((g) => (
-        <ExplorerGameRow key={g.id} g={g} ply={ply} expanded={expandedId === g.id} onToggle={() => setExpandedId((v) => (v === g.id ? null : g.id))}
+        <ExplorerGameRow key={g.id} g={g} ply={ply} path={path} expanded={expandedId === g.id} onToggle={() => setExpandedId((v) => (v === g.id ? null : g.id))}
           busy={busyId === g.id ? busyKind : null} dim={!!busyId && busyId !== g.id} onOpen={(atPly) => onOpen(g, atPly)} onReview={() => onReview(g)} err={errFor ? errFor(g.id) : null} />
       ))}
       <ListPager page={page} setPage={setPage} pageCount={pageCount} />
@@ -2564,11 +2588,11 @@ function ExplorerStatsCard({ path, ply, onPickMove, onOpenGame, onOpenReview }) 
   const run = async (g, kind, fn) => {
     if (busy.id) return;
     setBusy({ id: g.id, kind }); setOpenErr(null);
-    try { await fn(await fetchExplorerSans(g.id)); } catch { setOpenErr({ id: g.id, kind }); } finally { setBusy({ id: null, kind: null }); }
+    try { await fn(await fetchExplorerSans(g.id, path)); } catch { setOpenErr({ id: g.id, kind }); } finally { setBusy({ id: null, kind: null }); }
   };
   const open = (g, atPly) => run(g, "open", (sans) => onOpenGame && onOpenGame(sans, atPly));
   const review = (g) => run(g, "review", (sans) => onOpenReview && onOpenReview({ moves: sans, white: { username: g.white.name, rating: null }, black: { username: g.black.name, rating: null } }));
-  const sectionProps = { ply, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review, errFor: (id) => (openErr && openErr.id === id ? openErr.kind : null) };
+  const sectionProps = { ply, path, busyId: busy.id, busyKind: busy.kind, expandedId, setExpandedId, onOpen: open, onReview: review, errFor: (id) => (openErr && openErr.id === id ? openErr.kind : null) };
   return (
     <div style={{ marginTop: 12, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
       <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("전체 통계")}</div>
@@ -2954,7 +2978,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
       </CustomScroll>
-      <FocusPages wide={wide} labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
+      <FocusPages wide={wide} labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("커뮤니티")]} pages={[
         <div>{nextMovesPanel}</div>,
         <>
       {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
@@ -3085,8 +3109,9 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         <div>
           {/* (v0.7.1, 사용자 요청) 해설 페이지 = 유저 댓글(MoveExplainBlock) + (v0.7.8) 커뮤니티 블록 — 그 수의 오프닝 이름(없으면 PGN 수순)으로 찾은 웹 검색 결과 + YouTube 영상 */}
           {/* (v0.7.9, 사용자 요청) 커뮤니티 블록을 댓글 블록 위로 */}
-          <CommunityBlock sans={focusVideoSans} name={dispName || null} dev={!!canEdit} />
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
+          {/* (v0.8.1, 사용자 요청) 웹 검색(커뮤니티) 블록은 줄이고 댓글 블록은 늘려 두 블록을 같은 높이(communityBoxH)로, 둘 다 안쪽 스크롤 */}
+          <CommunityBlock sans={focusVideoSans} name={dispName || null} dev={!!canEdit} scrollH={communityBoxH(wide)} />
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} scrollH={communityBoxH(wide)} />
         </div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
@@ -3215,6 +3240,9 @@ const MOVETIME_MS = 260;
 // 높이는 7번째 블록의 위치(= 블록 6개 + 사이 간격)를 재서 정한다 — 블록 높이가 바뀌어도(평가치·키워드 로딩) ResizeObserver가 다시 잰다. 6개 이하면 자르지 않는다.
 // 포지션이 바뀌면(resetKey) 맨 위로 되돌린다. 안쪽 스크롤이 끝나도 페이지가 대신 스크롤되지 않게 overscroll-behavior: contain. scripts/check-analysis-tiles.mjs가 검사한다.
 export const MOVE_TILE_WINDOW = 6;
+// (v0.8.1, 사용자 요청) 집중 분석 "커뮤니티" 페이지 — 웹 검색 블록과 댓글 블록의 같은 높이(각각 안쪽 스크롤)
+//  데스크톱 2단(wide)은 오른쪽 열 안에 두 블록이 함께 보이도록 화면 높이를 반씩, 휴대폰은 한 블록이 화면 절반 남짓.
+const communityBoxH = (wide) => (wide ? "max(260px, calc((100vh - 250px) / 2))" : "min(440px, 58vh)");
 function MoveTileWindow({ enabled, resetKey, children }) {
   const ref = useRef(null);
   const [maxH, setMaxH] = useState(null);
@@ -3475,6 +3503,20 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   const { moves, posGames, statsLoading, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
     ? { moves: fenMoves, posGames: null, statsLoading: false, engineNote: null, ...fenEval }
     : mergedMoves;
+  // (v0.8.1, 사용자 제보 "수를 둘 때마다 보드가 깜빡인다") 수를 두면 새 포지션의 평가가 도착하기 전까지 posEval이 null이 돼
+  //  보드 위 평가치 막대가 0.00(가운데)으로 튀었다가 0.5초쯤 뒤 원래 값 근처로 돌아왔다 — 매 수마다 막대가 번쩍였다.
+  //  엔진이 켜져 있으면 새 값이 올 때까지 직전 값을 그대로 들고 있다가 새 값으로 부드럽게 옮겨 간다.
+  // (v0.8.1, BUG-221) 수를 둔 직후엔 새 줄이 올 때까지 이전 포지션의 엔진 줄이 그대로 남는다(비우면 3줄이 통째로 깜빡임) — 그런데 수 번호를
+  //  지금 수순 기준으로 붙여 "1...e4 2.e5"처럼 틀리게 보였고, 누르면 이전 포지션의 수를 지금 포지션에 두려 했다. 이전 줄은 그 줄의 포지션
+  //  기준 번호로 옅게 보여 주고 누르기는 막는다.
+  const linesPos = engineLines.length && engineLines[0].pos != null ? engineLines[0].pos : key;
+  const linesStale = linesPos !== key;
+  const linesSans = linesStale ? (linesPos ? linesPos.split(" ") : []) : sans;
+  const heldEvalRef = useRef(null);
+  const evalHoldOn = !!liveOn && engine.status === "ready";
+  if (posEval && (posEval.cp != null || posEval.mate != null)) heldEvalRef.current = posEval;
+  else if (!evalHoldOn) heldEvalRef.current = null;
+  const boardEval = posEval && (posEval.cp != null || posEval.mate != null) ? posEval : heldEvalRef.current;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
   // 엔진 depth가 깊어지며 갱신되므로, 매 변경마다 최신값으로 덮어써 두면 그 수를 두는 시점의 표시가
@@ -3924,8 +3966,9 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
           있던 플래그라 그대로 재사용한다. */}
       {/* (v0.8.0, 사용자 요청) 계산 중 안내 — 방금 둔 수의 진영 코치(백 MILKU · 흑 KOKOA). 첫 위치에서는 MILKU. 수 블록이 아직 없으면 목록 자리를 채우는 큰 상자,
           이미 있으면 그 위의 낮은 상자. 수를 더 둘 수 없는 포지션(메이트·스테일메이트)에는 띄우지 않는다. */}
-      {(linesPending || moves.length === 0) && legalMoveCount > 0 && (
-        <CoachThinkingBox coach={sans.length === 0 && !fenRoot ? "milku" : color === "w" ? "kokoa" : "milku"} compact={moves.length > 0} />
+      {/* (v0.8.1, 사용자 요청) 수 블록이 하나라도 보이면 띄우지 않는다 — 블록 위에 끼어들면 목록 전체를 아래로 밀어내기 때문. */}
+      {moves.length === 0 && legalMoveCount > 0 && (
+        <CoachThinkingBox coach={sans.length === 0 && !fenRoot ? "milku" : color === "w" ? "kokoa" : "milku"} />
       )}
       {moves.length === 0 ? null : (() => {
         const bk = moves.filter((m) => m.book);
@@ -4027,8 +4070,8 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} data-analysis-board="" className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84, scrollMarginTop: 72 }}>
-            <BoardWithMaterial board={board} endFx={drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} startColor={startColor} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
+            <BoardWithMaterial board={board} endFx={drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={boardEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
+              belowEval={<div style={{ opacity: linesStale ? 0.45 : 1, transition: "opacity .2s" }}><EngineLines lines={engineLines} pending={linesPending} sans={linesStale ? linesSans : sans} startColor={startColor} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus && !linesStale ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} /></div>} />
             {promoPrompt && (
               <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />
             )}
@@ -4058,7 +4101,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
         </div>
         {/* (18차 UX8) 집중분석은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
         {focus && (
-          <CustomScroll style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }}>
+          <CustomScroll hintBottom={6} style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }}>
             <div style={{ maxWidth: focusWide ? 1180 : 620, margin: "0 auto", padding: "18px 16px 60px" }}>
               <FocusPanel boardSize={boardSize} onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>

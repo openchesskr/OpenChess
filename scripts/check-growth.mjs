@@ -289,5 +289,19 @@ ok(/levelLabel\(byKey\[k\]\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(gr
   ok(/export const SHOWCASE_MS = 5000;/.test(gm) && /export function useShowcaseReplay\(/.test(gm), "보여 주기 연출 길이(SHOWCASE_MS = 5000)·재생 훅이 없음");
   ok(/showcase !== "done" \? \(\s*<AnalysisScanner phase="analyze" showcase /.test(growth) && /setShowcase\(sawLiveRef\.current \? "done" : "run"\)/.test(growth), "분석이 끝난 뒤 처음 보일 때 보여 주기 연출을 먼저 재생하지 않음(진행을 직접 본 경우는 건너뜀)");
   ok(/const live = showcase \? \(liveOverride \|\| null\) : liveReal;/.test(gm), "AnalysisScanner가 보여 주기 연출의 재생 진행을 쓰지 않음"); }
+// (v0.8.1) BUG-223 — 평가 실패가 많은 리뷰 결과는 저장하지 않는다(성장 통계 오염 방지), 세션 결과 보관, 화면이 숨겨진 동안 새 판 시작 안 함·다시 보이면 실패 판 재시도
+{ const mv = (n, failed) => Array.from({ length: n }, (_, i) => (i < failed ? { kind: "good", acc: null, lossWinPct: null } : { kind: "best", acc: 100, lossWinPct: 0 }));
+  ok(R.tooManyFailedMoves({ moves: mv(40, 10) }) === true, "평가 실패 25%인 결과를 저장 가능으로 판정(BUG-223)");
+  ok(R.tooManyFailedMoves({ moves: mv(40, 4) }) === false, "평가 실패 10%인 정상 결과를 버림");
+  ok(R.tooManyFailedMoves({ moves: [] }) === true && R.tooManyFailedMoves(null) === true, "빈 결과를 저장 가능으로 판정");
+  ok(R.tooManyFailedMoves({ moves: [{ kind: "book", acc: 100, lossWinPct: 0 }, { kind: "book", acc: null, lossWinPct: null }] }) === false, "평가 없는 이론 수를 실패로 셈");
+  const ar = rd("src/app/autoReview.js");
+  ok(/if \(!r \|\| tooManyFailedMoves\(r\)\) return null;\s*sessionResults\.set\(key, r\);\s*saveCachedReviewResult\(/.test(ar), "자동 리뷰가 평가 실패 검사 전에 결과를 저장함(BUG-223)");
+  ok(/sacTimeoutMs: AUTO_REVIEW_SAC_TIMEOUT_MS/.test(ar) && /engine\.sacTimeoutMs/.test(rd("src/app/common.jsx")), "자동 리뷰 희생 확인에 시간 상한이 없음(BUG-222 — 바쁜 메인 엔진 뒤에서 채점이 멈춤)");
+  ok(/document\.hidden\) return;/.test(growth) && /visibilitychange/.test(growth), "화면이 숨겨진 동안에도 새 판 분석을 시작함(BUG-223)");
+  // (v0.8.1, 사용자 요청) 5판 뒤에도 더 지난 대국을 이어서 분석
+  ok(R.GROWTH_MAX_GAMES > R.GROWTH_RECENT_GAMES, "추가 분석 상한(GROWTH_MAX_GAMES)이 5판 이하");
+  ok(/pool: src\.pool/.test(rd("src/app/growthHome.jsx")) && /gateN: need/.test(growth) && /auto\.gateDone >= 1/.test(growth), "성장 분석이 5판 뒤에 이어서 분석하지 않음(pool·gateN)");
+  ok(/useReviewSummaryVersion\(\)/.test(rd("src/app/gameHistory.jsx")), "최근 대국 박스가 자동 리뷰 완료 후 탁월·유일 개수를 다시 읽지 않음"); }
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 최근 5판 자동 리뷰(대국 선택·엔진 분석 연결·게이지), 승률 하락 원인 설명기, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

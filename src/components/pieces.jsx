@@ -54,7 +54,8 @@ function PieceGlyphView({ type, color, size, style, draggable = false, onDragSta
     // BASE_RATIO만큼을 차지하도록 스케일을 정하면, 모든 기물의 받침이 항상 같은 화면 폭이 된다.
     const scale = (size * PIECE_BASE_RATIO) / imgSet.basePx;
     return (
-      <img src={meta.src} alt={type} draggable={draggable} onDragStart={onDragStart}
+      // (v0.8.1, BUG-221) 수를 두면 도착 칸에 새 <img>가 생기는데, 브라우저가 이미 받아 둔 그림도 비동기로 디코딩하면 그 기물이 한 프레임 비어 보인다 — 동기 디코딩.
+      <img src={meta.src} alt={type} decoding="sync" draggable={draggable} onDragStart={onDragStart}
         style={{ width: meta.w * scale, height: meta.h * scale, display: "block", flexShrink: 0, filter: pieceShadow(light), ...dragStyle, ...style }} />
     );
   }

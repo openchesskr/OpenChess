@@ -1577,8 +1577,12 @@ export async function analyzeGame(fullSans, engine, depth, onProgress, movetime 
   // 없이 정적 판정으로 남았다. 멈춘 엔진은 작업별 워치독이 정리한다.
   let flushWait = null;
   const sacTried = new Set();
+  // (v0.8.1, BUG-222) engine.sacTimeoutMs가 있으면(백그라운드 자동 리뷰) 그 시간 안에 답이 없을 때 확인을 포기한다 — 메인 엔진이 분석 탭 심화 탐색으로 바쁘면
+  //  채점 전체가 그 뒤에서 멈췄다. 리뷰 화면은 기존대로 끝까지 기다린다.
+  const sacTimeoutMs = engine && Number.isFinite(engine.sacTimeoutMs) ? engine.sacTimeoutMs : null;
   const sacEval = async (fen) => {
-    const lines = await (dedicated.length ? engine : workers[0]).evaluateMulti(fen, depth, 1, movetime * 4);
+    const run = (dedicated.length ? engine : workers[0]).evaluateMulti(fen, depth, 1, movetime * 4);
+    const lines = sacTimeoutMs ? await Promise.race([run, new Promise((r) => setTimeout(() => r(null), sacTimeoutMs))]) : await run;
     return lines && lines[0] ? lines[0] : null;
   };
   // (v0.3.0 성능) 예전엔 포지션 N+1개를 전부 평가(await Promise.all)한 "다음"에야 채점 루프를 한
@@ -4494,7 +4498,15 @@ function summaryOfResult(result) {
   return { wa: num(result.whiteAcc), ba: num(result.blackAcc), w, b };
 }
 function readSummaries() { try { return JSON.parse(window.localStorage.getItem(SUMMARY_KEY)) || {}; } catch { return {}; } }
-export function recordReviewSummary(storageKey, result) {
+// (v0.8.1, 사용자 요청) 요약이 새로 기록되면(자동 리뷰가 한 판 끝남 등) 최근 대국 박스가 탁월·유일 개수를 바로 다시 읽도록 알린다.
+const summaryListeners = new Set();
+let summaryVersion = 0;
+export function useReviewSummaryVersion() {
+  const [v, setV] = useState(summaryVersion);
+  useEffect(() => { const f = () => setV(summaryVersion); summaryListeners.add(f); f(); return () => { summaryListeners.delete(f); }; }, []);
+  return v;
+}
+export function recordReviewSummary(storageKey, result, silent = false) {
   try {
     if (!storageKey || typeof window === "undefined") return;
     const sm = summaryOfResult(result); if (!sm) return;
@@ -4503,6 +4515,8 @@ export function recordReviewSummary(storageKey, result) {
     if (keys.length > SUMMARY_MAX) for (const k of keys.slice(0, keys.length - SUMMARY_MAX)) delete all[k]; // 오래된 것부터(삽입 순서)
     window.localStorage.setItem(SUMMARY_KEY, JSON.stringify(all));
   } catch { }
+  if (silent) return;   // 렌더 중 읽기(cachedReviewSummary)가 빈 요약을 채울 때는 알리지 않는다(렌더 중 다른 컴포넌트 갱신 방지)
+  summaryVersion++; summaryListeners.forEach((f) => { try { f(); } catch { } });
 }
 export function cachedReviewSummary(game) {
   try {
@@ -4515,7 +4529,7 @@ export function cachedReviewSummary(game) {
       const p = JSON.parse(raw);
       if (p && p.v === REVIEW_RESULT_CACHE_VERSION && p.result && Array.isArray(p.result.moves)) {
         const sm = summaryOfResult(fixForcedOnlyMoves(p.result));
-        if (sm) { if (!readSummaries()[rk]) recordReviewSummary(rk, p.result); return pick(sm); }
+        if (sm) { if (!readSummaries()[rk]) recordReviewSummary(rk, p.result, true); return pick(sm); }
       }
     }
     const saved = readSummaries()[rk];
